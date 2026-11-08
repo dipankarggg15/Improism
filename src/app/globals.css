@@ -1,1 +1,79 @@
 @import "tailwindcss";
+
+:root {
+  --paper: #ffffff;
+  --ink: #0a0a0a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--paper);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: #d4d4d4;
+  color: #0a0a0a;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@layer components {
+  .admin-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 600;
+    color: #3f3f46;
+  }
+
+  .admin-input {
+    width: 100%;
+    border: 1px solid #d4d4d8;
+    border-radius: 0.75rem;
+    background: white;
+    padding: 0.7rem 0.8rem;
+    font-size: 0.875rem;
+    outline: none;
+  }
+
+  .admin-input:focus {
+    border-color: #09090b;
+    box-shadow: 0 0 0 2px rgb(0 0 0 / 0.1);
+  }
+
+  .admin-rich p { margin: 0.7em 0; }
+  .admin-rich h2 { margin: 1.2em 0 0.5em; font-size: 1.35em; font-weight: 700; }
+  .admin-rich h3 { margin: 1em 0 0.4em; font-size: 1.15em; font-weight: 700; }
+  .admin-rich ul { margin: 0.8em 0; list-style: disc; padding-left: 1.4em; }
+  .admin-rich ol { margin: 0.8em 0; list-style: decimal; padding-left: 1.4em; }
+  .admin-rich blockquote { margin: 1em 0; border-left: 3px solid #18181b; padding-left: 1em; color: #52525b; }
+  .admin-rich a { text-decoration: underline; }
+  .admin-rich:empty::before { content: attr(data-placeholder); color: #a1a1aa; }
+}

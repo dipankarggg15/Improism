@@ -29,7 +29,7 @@ import Link from "next/link";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useImproism } from "@/components/improism-provider";
 import { useJourneys } from "@/components/journeys/journeys-provider";
-import { conversations, posts, subjects as allSubjects } from "@/lib/mock-data";
+import { conversations, subjects as allSubjects } from "@/lib/mock-data";
 import { logout } from "@/app/auth/actions";
 
 const navItems = [
@@ -136,7 +136,7 @@ export function ProfileSettings() {
     displayName,
     bio,
     selectedSubjects,
-    savedPostIds,
+    savedPosts,
     theme,
     timezone,
     notifications,
@@ -154,7 +154,6 @@ export function ProfileSettings() {
   const [draftBio, setDraftBio] = useState(bio);
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState("");
-  const savedPosts = posts.filter((post) => savedPostIds.includes(post.id));
   const activeJourneys = journeys.filter((journey) => journey.status === "active");
 
   const dailyAllowance = selectedSubjects.length * 10;
@@ -182,9 +181,22 @@ export function ProfileSettings() {
     }
   }
 
-  function removeSavedPost(id: number) {
-    toggleSavedPost(id);
-    setNotice("Removed from your saved posts.");
+  async function removeSavedPost(id: string) {
+    try {
+      await toggleSavedPost(id);
+      setNotice("Removed from your saved posts.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not update your saved posts.");
+    }
+  }
+
+  async function handleTimezoneChange(nextTimezone: string) {
+    try {
+      await setTimezone(nextTimezone);
+      setNotice("Timezone updated. Your next feed day will use this timezone.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not update your timezone.");
+    }
   }
 
   async function handleSubjectToggle(name: string) {
@@ -373,7 +385,7 @@ export function ProfileSettings() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => removeSavedPost(post.id)}
+                          onClick={() => void removeSavedPost(String(post.id))}
                           className="grid size-9 shrink-0 place-items-center rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-black"
                           aria-label={`Remove ${post.title} from saved posts`}
                         >
@@ -418,7 +430,7 @@ export function ProfileSettings() {
                 </div>
               </Section>
 
-              <Section title="Preferences" description="These choices are stored locally in this prototype.">
+              <Section title="Preferences" description="Feed preferences sync securely across your devices.">
                 <div>
                   <p className="text-xs font-semibold text-zinc-500">Theme</p>
                   <div className="mt-2 grid grid-cols-3 gap-2 rounded-xl bg-zinc-100 p-1">
@@ -451,7 +463,7 @@ export function ProfileSettings() {
                     <Globe2 className="pointer-events-none absolute left-3 size-4 text-zinc-400" aria-hidden="true" />
                     <select
                       value={timezone}
-                      onChange={(event) => setTimezone(event.target.value)}
+                      onChange={(event) => void handleTimezoneChange(event.target.value)}
                       className="w-full appearance-none rounded-xl border border-zinc-200 bg-white py-3 pl-10 pr-9 text-sm font-medium text-black outline-none focus:border-black"
                     >
                       <option value="Asia/Kolkata">India · Kolkata (GMT+5:30)</option>

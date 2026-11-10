@@ -40,6 +40,7 @@ export const subjects: SubjectRecord[] = [
   { name: "Creativity", description: "Original thinking and making meaningful things." },
   { name: "Science", description: "Useful discoveries about people and the world." },
   { name: "Money", description: "Clearer decisions about earning, saving, and enough." },
+  { name: "Mindfulness", description: "Attention, presence, reflection, and everyday awareness." },
 ];
 
 export const posts: PostRecord[] = [

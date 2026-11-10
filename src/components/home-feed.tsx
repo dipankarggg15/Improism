@@ -20,12 +20,51 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useImproism } from "@/components/improism-provider";
 import { useJourneys } from "@/components/journeys/journeys-provider";
-import { conversations, posts, type PostRecord } from "@/lib/mock-data";
+import { conversations, subjects as availableSubjects, type PostTheme } from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 
-const themeClasses: Record<PostRecord["theme"], string> = {
+type FeedPost = {
+  id: string;
+  subjectId: string;
+  subject: string;
+  title: string;
+  body: string;
+  excerpt: string;
+  imageUrl: string | null;
+  allocationDate: string;
+  viewed: boolean;
+  saved: boolean;
+  categoryPosition: number;
+  feedPosition: number;
+  eyebrow: string;
+  readTime: string;
+  visualTitle: string;
+  visualNote: string;
+  theme: PostTheme;
+};
+
+type FeedRpcRow = {
+  post_id: string;
+  subject_id: string;
+  subject_name: string;
+  title: string;
+  body: string;
+  excerpt: string;
+  image_url: string | null;
+  allocation_date: string;
+  viewed: boolean;
+  saved: boolean;
+  category_position: number;
+  feed_position: number;
+};
+
+const themes: PostTheme[] = ["forest", "clay", "night", "lemon", "sky", "lilac"];
+
+const themeClasses: Record<PostTheme, string> = {
   forest: "bg-black text-white",
   clay: "bg-zinc-200 text-black",
   night: "bg-zinc-900 text-white",
@@ -33,6 +72,35 @@ const themeClasses: Record<PostRecord["theme"], string> = {
   sky: "bg-zinc-300 text-black",
   lilac: "bg-zinc-700 text-white",
 };
+
+function themeForPost(id: string) {
+  const score = Array.from(id).reduce((total, character) => total + character.charCodeAt(0), 0);
+  return themes[score % themes.length];
+}
+
+function toFeedPost(row: FeedRpcRow): FeedPost {
+  const text = row.body || row.excerpt;
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0;
+  return {
+    id: row.post_id,
+    subjectId: row.subject_id,
+    subject: row.subject_name,
+    title: row.title,
+    body: row.body,
+    excerpt: row.excerpt || row.body.slice(0, 240),
+    imageUrl: row.image_url,
+    allocationDate: row.allocation_date,
+    viewed: row.viewed,
+    saved: row.saved,
+    categoryPosition: row.category_position,
+    feedPosition: row.feed_position,
+    eyebrow: `A ${row.subject_name.toLowerCase()} perspective`,
+    readTime: `${Math.max(1, Math.ceil(words / 220))} min read`,
+    visualTitle: row.title,
+    visualNote: row.excerpt || "An idea worth carrying into your day.",
+    theme: themeForPost(row.post_id),
+  };
+}
 
 const navItems = [
   { label: "Home", icon: Home, active: true },
@@ -81,11 +149,18 @@ function Navigation({ onPlaceholder }: { onPlaceholder: (label: string) => void 
   );
 }
 
-function DailyAllowance({ selectedSubject, subjectCount }: { selectedSubject: string; subjectCount: number }) {
+function DailyAllowance({
+  selectedSubject,
+  subjectCount,
+  current,
+}: {
+  selectedSubject: string;
+  subjectCount: number;
+  current: number;
+}) {
   const isForYou = selectedSubject === "For You";
-  const current = isForYou ? 18 : 4;
   const limit = isForYou ? subjectCount * 10 : 10;
-  const width = `${(current / limit) * 100}%`;
+  const width = `${limit ? Math.min(100, (current / limit) * 100) : 0}%`;
 
   return (
     <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_10px_30px_rgba(0,0,0,0.04)]">
@@ -148,7 +223,18 @@ function SubjectFilters({
   );
 }
 
-function PostVisual({ post }: { post: PostRecord }) {
+function PostVisual({ post }: { post: FeedPost }) {
+  if (post.imageUrl) {
+    return (
+      <div
+        className="aspect-[16/10] bg-zinc-100 bg-cover bg-center"
+        style={{ backgroundImage: `url(${JSON.stringify(post.imageUrl)})` }}
+        role="img"
+        aria-label={`Cover image for ${post.title}`}
+      />
+    );
+  }
+
   return (
     <div
       className={`relative isolate aspect-[16/10] overflow-hidden ${themeClasses[post.theme]}`}
@@ -159,7 +245,7 @@ function PostVisual({ post }: { post: PostRecord }) {
       <div className="absolute left-[14%] top-[18%] h-[44%] w-px rotate-[18deg] bg-current opacity-25" />
       <div className="relative flex h-full flex-col justify-between p-6 sm:p-8">
         <span className="w-fit rounded-full border border-current/30 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.18em] opacity-80">
-          Improism note · {String(post.id).padStart(2, "0")}
+          Improism note
         </span>
         <div>
           <p className="max-w-[19rem] text-[1.65rem] font-semibold leading-[1.05] tracking-[-0.045em] sm:max-w-[25rem] sm:text-[2.35rem]">
@@ -181,10 +267,10 @@ function PostCard({
   onDiscuss,
   onPlaceholder,
 }: {
-  post: PostRecord;
+  post: FeedPost;
   saved: boolean;
-  onSave: (id: number) => void;
-  onDiscuss: (id: number) => void;
+  onSave: (id: string) => void;
+  onDiscuss: (id: string) => void;
   onPlaceholder: (label: string) => void;
 }) {
   return (
@@ -352,7 +438,19 @@ function JourneyPreview() {
   );
 }
 
-function DiscoverSubjects({ onAdd }: { onAdd: (subject: string) => void }) {
+function DiscoverSubjects({
+  selectedSubjects,
+  onAdd,
+}: {
+  selectedSubjects: string[];
+  onAdd: (subject: string) => void;
+}) {
+  const discoverable = availableSubjects
+    .filter((subject) => !selectedSubjects.includes(subject.name))
+    .slice(0, 3);
+
+  if (!discoverable.length) return null;
+
   return (
     <section className="rounded-[1.35rem] border border-zinc-200 bg-zinc-100 p-5">
       <div className="flex items-center gap-2.5">
@@ -368,7 +466,7 @@ function DiscoverSubjects({ onAdd }: { onAdd: (subject: string) => void }) {
       </div>
 
       <div className="mt-4 space-y-2">
-        {["Creativity", "Science", "Money"].map((subject) => (
+        {discoverable.map(({ name: subject }) => (
           <button
             key={subject}
             type="button"
@@ -409,25 +507,164 @@ function Notice({ message, onClose }: { message: string; onClose: () => void }) 
   );
 }
 
+function ViewTrackedPost({
+  post,
+  onViewed,
+  children,
+}: {
+  post: FeedPost;
+  onViewed: (postId: string) => Promise<boolean>;
+  children: ReactNode;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const completedRef = useRef(post.viewed);
+
+  useEffect(() => {
+    completedRef.current = post.viewed;
+  }, [post.viewed]);
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element || completedRef.current) return;
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+          if (!timer) {
+            timer = setTimeout(() => {
+              timer = undefined;
+              if (completedRef.current) return;
+              completedRef.current = true;
+              void onViewed(post.id).then((saved) => {
+                if (!saved) completedRef.current = false;
+              });
+            }, 1000);
+          }
+        } else if (timer) {
+          clearTimeout(timer);
+          timer = undefined;
+        }
+      },
+      { threshold: [0, 0.5, 1] },
+    );
+
+    observer.observe(element);
+    return () => {
+      if (timer) clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [onViewed, post.id]);
+
+  return <div ref={containerRef}>{children}</div>;
+}
+
+function FeedLoading() {
+  return (
+    <div className="space-y-5" aria-label="Loading your daily feed" aria-live="polite">
+      {[0, 1].map((item) => (
+        <div key={item} className="overflow-hidden rounded-[1.45rem] border border-zinc-200 bg-white">
+          <div className="h-20 animate-pulse bg-zinc-100" />
+          <div className="aspect-[16/10] animate-pulse bg-zinc-200" />
+          <div className="space-y-3 p-6">
+            <div className="h-6 w-3/4 animate-pulse rounded bg-zinc-200" />
+            <div className="h-4 w-full animate-pulse rounded bg-zinc-100" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function HomeFeed() {
   const router = useRouter();
   const { selectedSubjects, savedPostIds, toggleSavedPost, toggleSubject } = useImproism();
   const [selectedSubject, setSelectedSubject] = useState("For You");
   const [notice, setNotice] = useState("");
+  const [feedPosts, setFeedPosts] = useState<FeedPost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [feedError, setFeedError] = useState("");
   const subjectFilters = ["For You", ...selectedSubjects];
+  const selectedSubjectsKey = selectedSubjects.join("|");
+  const activeSubject = selectedSubject === "For You" || selectedSubjects.includes(selectedSubject)
+    ? selectedSubject
+    : "For You";
 
   const filteredPosts = useMemo(
-    () =>
-      selectedSubject === "For You"
-        ? posts.filter((post) => selectedSubjects.includes(post.subject))
-        : posts.filter((post) => post.subject === selectedSubject),
-    [selectedSubject, selectedSubjects],
+    () => {
+      const matching = activeSubject === "For You"
+        ? feedPosts
+        : feedPosts.filter((post) => post.subject === activeSubject);
+      return [...matching].sort((left, right) =>
+        activeSubject === "For You"
+          ? left.feedPosition - right.feedPosition
+          : left.categoryPosition - right.categoryPosition,
+      );
+    },
+    [activeSubject, feedPosts],
   );
 
-  function toggleSaved(postId: number) {
+  const loadFeed = useCallback(async () => {
+    if (!isSupabaseConfigured()) {
+      setFeedError("Supabase is not configured for this environment.");
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setFeedError("");
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("get_my_daily_feed");
+    if (error) {
+      setFeedError(error.message || "Could not load your daily feed.");
+      setLoading(false);
+      return;
+    }
+    setFeedPosts(((data ?? []) as FeedRpcRow[]).map(toFeedPost));
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let active = true;
+    const supabase = createClient();
+    void supabase.rpc("get_my_daily_feed").then(({ data, error }) => {
+      if (!active) return;
+      if (error) {
+        setFeedError(error.message || "Could not load your daily feed.");
+      } else {
+        setFeedPosts(((data ?? []) as FeedRpcRow[]).map(toFeedPost));
+        setFeedError("");
+      }
+      setLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [selectedSubjectsKey]);
+
+  const markViewed = useCallback(async (postId: string) => {
+    const supabase = createClient();
+    const { error } = await supabase.rpc("mark_my_feed_posts_viewed", { p_post_ids: [postId] });
+    if (error) return false;
+    setFeedPosts((current) => current.map((post) =>
+      post.id === postId ? { ...post, viewed: true } : post,
+    ));
+    return true;
+  }, []);
+
+  async function toggleSaved(postId: string) {
     const isSaved = savedPostIds.includes(postId);
-    toggleSavedPost(postId);
-    setNotice(isSaved ? "Removed from your saved posts." : "Saved for later.");
+    const post = feedPosts.find((item) => item.id === postId);
+    try {
+      await toggleSavedPost(postId, post ? {
+        subject: post.subject,
+        title: post.title,
+        readTime: post.readTime,
+      } : undefined);
+      setNotice(isSaved ? "Removed from your saved posts." : "Saved for later.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Could not update your saved posts.");
+    }
   }
 
   function showPlaceholder(label: string) {
@@ -446,6 +683,11 @@ export function HomeFeed() {
       setNotice(error instanceof Error ? error.message : "Could not update your subjects.");
     }
   }
+
+  const displayedDate = feedPosts[0]?.allocationDate
+    ? new Intl.DateTimeFormat("en", { weekday: "long", day: "numeric", month: "short" })
+        .format(new Date(`${feedPosts[0].allocationDate}T12:00:00`))
+    : "Today";
 
   function navigateFromHome(label: string) {
     if (label === "AI") {
@@ -486,7 +728,11 @@ export function HomeFeed() {
             <Navigation onPlaceholder={navigateFromHome} />
           </div>
           <div className="mt-auto">
-            <DailyAllowance selectedSubject={selectedSubject} subjectCount={selectedSubjects.length} />
+            <DailyAllowance
+              selectedSubject={activeSubject}
+              subjectCount={selectedSubjects.length}
+              current={filteredPosts.length}
+            />
             <p className="mt-4 px-2 text-[0.67rem] leading-5 text-zinc-400">
               A little better, a little more yourself.
             </p>
@@ -505,29 +751,51 @@ export function HomeFeed() {
                 </h1>
               </div>
               <div className="hidden rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-500 sm:block">
-                Sunday · 8 Nov
+                {displayedDate}
               </div>
             </div>
 
             <div className="mt-5 md:hidden">
-              <DailyAllowance selectedSubject={selectedSubject} subjectCount={selectedSubjects.length} />
+              <DailyAllowance
+                selectedSubject={activeSubject}
+                subjectCount={selectedSubjects.length}
+                current={filteredPosts.length}
+              />
             </div>
           </div>
 
           <div className="sticky top-[65px] z-30 border-y border-zinc-200 bg-white/95 pt-3 backdrop-blur md:top-0">
-            <SubjectFilters subjects={subjectFilters} selected={selectedSubject} onSelect={setSelectedSubject} />
+            <SubjectFilters subjects={subjectFilters} selected={activeSubject} onSelect={setSelectedSubject} />
           </div>
 
           <div className="space-y-5 px-4 pt-5 sm:px-6 lg:px-7">
+            {loading && <FeedLoading />}
+
+            {!loading && feedError && (
+              <div className="rounded-[1.35rem] border border-red-200 bg-red-50 px-6 py-8 text-center">
+                <h2 className="text-base font-semibold">Your feed could not be loaded</h2>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-red-700">{feedError}</p>
+                <button
+                  type="button"
+                  onClick={() => void loadFeed()}
+                  className="mt-4 rounded-full bg-black px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
             {filteredPosts.map((post, index) => (
               <div key={post.id} className="space-y-5">
-                <PostCard
-                  post={post}
-                  saved={savedPostIds.includes(post.id)}
-                  onSave={toggleSaved}
-                  onDiscuss={(postId) => router.push(`/ai?post=${postId}`)}
-                  onPlaceholder={showPlaceholder}
-                />
+                <ViewTrackedPost post={post} onViewed={markViewed}>
+                  <PostCard
+                    post={post}
+                    saved={savedPostIds.includes(post.id)}
+                    onSave={(postId) => void toggleSaved(postId)}
+                    onDiscuss={(postId) => router.push(`/ai?post=${postId}`)}
+                    onPlaceholder={showPlaceholder}
+                  />
+                </ViewTrackedPost>
 
                 {index === 0 && (
                   <div className="lg:hidden">
@@ -541,25 +809,29 @@ export function HomeFeed() {
                 )}
                 {index === 2 && (
                   <div className="lg:hidden">
-                    <DiscoverSubjects onAdd={addSubject} />
+                    <DiscoverSubjects selectedSubjects={selectedSubjects} onAdd={addSubject} />
                   </div>
                 )}
               </div>
             ))}
 
+            {!loading && !feedError && (
             <div className="rounded-[1.35rem] border border-dashed border-zinc-300 px-6 py-10 text-center">
               <span className="mx-auto grid size-10 place-items-center rounded-full bg-zinc-100 text-black">
                 <Leaf className="size-4.5" aria-hidden="true" />
               </span>
               <h2 className="mt-3 text-base font-semibold">
-                {filteredPosts.length ? "You’re caught up for this preview" : "No posts in this subject yet"}
+                {filteredPosts.length ? "You’re caught up for today" : "No posts in this subject yet"}
               </h2>
               <p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-zinc-500">
                 {filteredPosts.length
-                  ? "Your full daily feed can include up to 10 posts from each selected subject."
-                  : "Follow another subject from Profile or choose For You to continue reading."}
+                  ? "Unviewed posts will stay with you, and fresh spaces are filled on your next active day."
+                  : selectedSubjects.length
+                    ? "Published posts will appear here as they become available."
+                    : "Follow a subject from Profile to create your daily feed."}
               </p>
             </div>
+            )}
           </div>
         </main>
 
@@ -575,7 +847,10 @@ export function HomeFeed() {
           <div className="mt-5 space-y-4">
             <DiscussionPreview compact />
             <JourneyPreview />
-            <DiscoverSubjects onAdd={(subject) => void addSubject(subject)} />
+            <DiscoverSubjects
+              selectedSubjects={selectedSubjects}
+              onAdd={(subject) => void addSubject(subject)}
+            />
           </div>
           <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 px-1 text-[0.66rem] text-zinc-400">
             <button type="button" onClick={() => showPlaceholder("About")}>About</button>

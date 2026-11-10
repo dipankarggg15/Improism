@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BrainCircuit,
   BookOpenText,
   FileText,
   Gauge,
@@ -20,6 +21,7 @@ const nav = [
   { href: "/admin/posts", label: "Posts", icon: FileText },
   { href: "/admin/articles", label: "Articles", icon: BookOpenText },
   { href: "/admin/subjects", label: "Subjects", icon: Tags },
+  { href: "/admin/brain", label: "Improism Brain", icon: BrainCircuit },
 ];
 
 function Sidebar({ close, name }: { close?: () => void; name: string }) {

@@ -227,3 +227,67 @@ export async function saveSubject(
   revalidatePath("/admin/subjects");
   redirect("/admin/subjects?saved=1");
 }
+
+export async function saveBrainPrinciple(
+  _state: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  let savedId = "";
+  try {
+    const { supabase, user } = await assertAdmin();
+    const existingId = text(formData.get("id"));
+    const id = existingId || crypto.randomUUID();
+    const numberValue = text(formData.get("principleNumber"));
+    const principleNumber = Number(numberValue);
+    const title = text(formData.get("title"));
+    const content = sanitizeRichText(text(formData.get("content")));
+    const plainContent = content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+    if (!Number.isInteger(principleNumber) || principleNumber < 1 || principleNumber > 9999) {
+      return { error: "Principle number must be a whole number between 1 and 9,999." };
+    }
+    const titleError = validateTitle(title);
+    if (titleError) return { error: titleError };
+    if (!plainContent) return { error: "Add content for this principle." };
+    if (content.length > 100000) return { error: "Principle content must be 100,000 characters or fewer." };
+    if (existingId && !/^[0-9a-f-]{36}$/i.test(existingId)) return { error: "Invalid principle." };
+
+    if (existingId) {
+      const { data: existing, error: findError } = await supabase
+        .from("brain_principles")
+        .select("id")
+        .eq("id", existingId)
+        .single();
+      if (findError || !existing) return { error: "Principle not found." };
+    }
+
+    const payload = {
+      principle_number: principleNumber,
+      title,
+      content,
+    };
+    const result = existingId
+      ? await supabase.from("brain_principles").update(payload).eq("id", id)
+      : await supabase.from("brain_principles").insert({ id, ...payload, created_by: user.id });
+    if (result.error) {
+      if (result.error.code === "23505") return { error: `Principle ${principleNumber} already exists.` };
+      return { error: result.error.message };
+    }
+    savedId = id;
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Could not save the principle." };
+  }
+
+  revalidatePath("/admin/brain");
+  redirect(`/admin/brain?saved=1#principle-${savedId}`);
+}
+
+export async function deleteBrainPrinciple(formData: FormData) {
+  const { supabase } = await assertAdmin();
+  const id = text(formData.get("id"));
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Invalid principle.");
+  const { error } = await supabase.from("brain_principles").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin/brain");
+  redirect("/admin/brain?deleted=1");
+}

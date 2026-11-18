@@ -24,7 +24,7 @@ export async function GET(
 
     const { data: messages, error: messageError } = await supabase
       .from("ai_test_messages")
-      .select("id, conversation_id, role, content, model, input_tokens, output_tokens, total_tokens, governing_documents, created_at")
+      .select("id, conversation_id, role, content, model, input_tokens, output_tokens, total_tokens, cached_input_tokens, cache_write_tokens, reasoning_tokens, reasoning_effort, total_duration_ms, brain_load_ms, first_token_ms, completion_ms, governing_documents, created_at")
       .eq("conversation_id", id)
       .order("created_at", { ascending: true });
     if (messageError) throw messageError;
@@ -57,6 +57,14 @@ export async function GET(
         inputTokens: message.input_tokens,
         outputTokens: message.output_tokens,
         totalTokens: message.total_tokens,
+        cachedInputTokens: message.cached_input_tokens,
+        cacheWriteTokens: message.cache_write_tokens,
+        reasoningTokens: message.reasoning_tokens,
+        reasoningEffort: message.reasoning_effort,
+        totalDurationMs: message.total_duration_ms,
+        brainLoadMs: message.brain_load_ms,
+        firstTokenMs: message.first_token_ms,
+        completionMs: message.completion_ms,
         governingDocuments: message.governing_documents as GoverningDocumentSnapshot[],
         feedback: feedbackByMessage.get(message.id) ?? null,
         createdAt: message.created_at,

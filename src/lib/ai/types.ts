@@ -21,10 +21,20 @@ export type PlaygroundMessage = {
   inputTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
+  cachedInputTokens: number | null;
+  cacheWriteTokens: number | null;
+  reasoningTokens: number | null;
+  reasoningEffort: string | null;
+  totalDurationMs: number | null;
+  brainLoadMs: number | null;
+  firstTokenMs: number | null;
+  completionMs: number | null;
   governingDocuments: GoverningDocumentSnapshot[];
   feedback: PlaygroundFeedback | null;
   createdAt: string;
 };
+
+export type PlaygroundReasoningEffort = "none" | "low" | "medium" | "high";
 
 export type PlaygroundConversation = {
   id: string;

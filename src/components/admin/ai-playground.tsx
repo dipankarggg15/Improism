@@ -10,11 +10,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   PlaygroundConversation,
   PlaygroundFeedback,
   PlaygroundMessage,
+  PlaygroundReasoningEffort,
 } from "@/lib/ai/types";
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
@@ -27,6 +28,54 @@ async function api<T>(url: string, options?: RequestInit): Promise<T> {
   return body;
 }
 
+type StreamEvent =
+  | { type: "text_delta"; delta: string }
+  | { type: "completed"; message: PlaygroundMessage }
+  | { type: "error"; error: string };
+
+async function streamMessage(
+  url: string,
+  body: { message: string; reasoningEffort: PlaygroundReasoningEffort },
+  onEvent: (event: StreamEvent) => void,
+) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(payload.error || "The request failed.");
+  }
+  if (!response.body) throw new Error("The response stream was unavailable.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completed = false;
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line) as StreamEvent;
+      if (event.type === "error") throw new Error(event.error);
+      if (event.type === "completed") completed = true;
+      onEvent(event);
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) {
+    const event = JSON.parse(buffer) as StreamEvent;
+    if (event.type === "error") throw new Error(event.error);
+    if (event.type === "completed") completed = true;
+    onEvent(event);
+  }
+  if (!completed) throw new Error("The response stream ended before the answer was saved.");
+}
+
 function AssistantMessage({
   message,
   onFeedback,
@@ -34,6 +83,7 @@ function AssistantMessage({
   message: PlaygroundMessage;
   onFeedback: (messageId: string, verdict: "correct" | "incorrect", correction: string) => Promise<void>;
 }) {
+  const streaming = message.id.startsWith("streaming-");
   const [verdict, setVerdict] = useState<"correct" | "incorrect" | null>(message.feedback?.verdict ?? null);
   const [correction, setCorrection] = useState(message.feedback?.correction ?? "");
   const [saving, setSaving] = useState(false);
@@ -62,7 +112,9 @@ function AssistantMessage({
         </div>
         <div className="mt-4 whitespace-pre-wrap text-[0.95rem] leading-7 text-zinc-800">{message.content}</div>
 
-        <div className="mt-5 border-t border-zinc-100 pt-4">
+        {streaming ? (
+          <span className="mt-3 inline-block h-4 w-1 animate-pulse rounded-full bg-zinc-400" aria-label="Response streaming" />
+        ) : <div className="mt-5 border-t border-zinc-100 pt-4">
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -124,10 +176,13 @@ function AssistantMessage({
               ))}
             </div>
           </details>
-          <p className="mt-2 text-[0.67rem] text-zinc-400">
-            Input {message.inputTokens?.toLocaleString() ?? "—"} · Output {message.outputTokens?.toLocaleString() ?? "—"}
-          </p>
-        </div>
+          <div className="mt-3 grid gap-1 text-[0.67rem] text-zinc-400 sm:grid-cols-2">
+            <p>Input {message.inputTokens?.toLocaleString() ?? "—"} · Cached {message.cachedInputTokens?.toLocaleString() ?? "—"} · Cache writes {message.cacheWriteTokens?.toLocaleString() ?? "—"}</p>
+            <p>Output {message.outputTokens?.toLocaleString() ?? "—"} · Reasoning {message.reasoningTokens?.toLocaleString() ?? "—"} · Effort {message.reasoningEffort ?? "—"}</p>
+            <p>Total {message.totalDurationMs?.toLocaleString() ?? "—"} ms · Brain {message.brainLoadMs?.toLocaleString() ?? "—"} ms</p>
+            <p>First text {message.firstTokenMs?.toLocaleString() ?? "—"} ms · OpenAI complete {message.completionMs?.toLocaleString() ?? "—"} ms</p>
+          </div>
+        </div>}
       </article>
     </div>
   );
@@ -136,10 +191,12 @@ function AssistantMessage({
 export function AIPlayground({
   initialConversations,
   configuredModel,
+  configuredReasoningEffort,
   apiKeyConfigured,
 }: {
   initialConversations: PlaygroundConversation[];
   configuredModel: string;
+  configuredReasoningEffort: PlaygroundReasoningEffort;
   apiKeyConfigured: boolean;
 }) {
   const [conversations, setConversations] = useState(initialConversations);
@@ -149,6 +206,8 @@ export function AIPlayground({
   const [loadingConversation, setLoadingConversation] = useState(Boolean(initialConversations[0]));
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [reasoningEffort, setReasoningEffort] = useState(configuredReasoningEffort);
+  const skipNextLoad = useRef<string | null>(null);
 
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === activeId) ?? null,
@@ -157,6 +216,10 @@ export function AIPlayground({
 
   useEffect(() => {
     if (!activeId) return;
+    if (skipNextLoad.current === activeId) {
+      skipNextLoad.current = null;
+      return;
+    }
     let active = true;
     void api<{ messages: PlaygroundMessage[] }>(`/api/admin/ai-playground/conversations/${activeId}`)
       .then((data) => {
@@ -171,15 +234,11 @@ export function AIPlayground({
     return () => { active = false; };
   }, [activeId]);
 
-  async function refreshConversations() {
-    const result = await api<{ conversations: PlaygroundConversation[] }>("/api/admin/ai-playground/conversations");
-    setConversations(result.conversations);
-  }
-
   async function newConversation() {
     setError("");
     const result = await api<{ conversation: PlaygroundConversation }>("/api/admin/ai-playground/conversations", { method: "POST" });
     setConversations((current) => [result.conversation, ...current]);
+    skipNextLoad.current = result.conversation.id;
     setActiveId(result.conversation.id);
     setMessages([]);
     setLoadingConversation(false);
@@ -213,15 +272,19 @@ export function AIPlayground({
     setError("");
     setInput("");
     let conversationId = activeId;
+    const requestId = Date.now().toString();
+    const pendingUserId = `pending-${requestId}`;
+    const streamingAssistantId = `streaming-${requestId}`;
     try {
       if (!conversationId) {
         const created = await api<{ conversation: PlaygroundConversation }>("/api/admin/ai-playground/conversations", { method: "POST" });
         conversationId = created.conversation.id;
         setConversations((current) => [created.conversation, ...current]);
+        skipNextLoad.current = conversationId;
         setActiveId(conversationId);
       }
       const optimistic: PlaygroundMessage = {
-        id: `pending-${Date.now()}`,
+        id: pendingUserId,
         conversationId,
         role: "user",
         content,
@@ -229,20 +292,46 @@ export function AIPlayground({
         inputTokens: null,
         outputTokens: null,
         totalTokens: null,
+        cachedInputTokens: null,
+        cacheWriteTokens: null,
+        reasoningTokens: null,
+        reasoningEffort,
+        totalDurationMs: null,
+        brainLoadMs: null,
+        firstTokenMs: null,
+        completionMs: null,
         governingDocuments: [],
         feedback: null,
         createdAt: new Date().toISOString(),
       };
-      setMessages((current) => [...current, optimistic]);
-      await api<{ message: PlaygroundMessage }>(`/api/admin/ai-playground/conversations/${conversationId}/messages`, {
-        method: "POST",
-        body: JSON.stringify({ message: content }),
+      const streamingAssistant: PlaygroundMessage = {
+        ...optimistic,
+        id: streamingAssistantId,
+        role: "assistant",
+        content: "",
+      };
+      setMessages((current) => [...current, optimistic, streamingAssistant]);
+      await streamMessage(`/api/admin/ai-playground/conversations/${conversationId}/messages`, {
+        message: content,
+        reasoningEffort,
+      }, (event) => {
+        if (event.type === "text_delta") {
+          setMessages((current) => current.map((item) => item.id === streamingAssistantId
+            ? { ...item, content: item.content + event.delta }
+            : item));
+        } else if (event.type === "completed") {
+          setMessages((current) => current.map((item) => item.id === streamingAssistantId ? event.message : item));
+          setConversations((current) => current.map((conversation) => conversation.id === conversationId
+            ? {
+                ...conversation,
+                title: conversation.title === "New conversation" ? content.slice(0, 72) : conversation.title,
+                updatedAt: new Date().toISOString(),
+              }
+            : conversation));
+        }
       });
-      const loaded = await api<{ messages: PlaygroundMessage[] }>(`/api/admin/ai-playground/conversations/${conversationId}`);
-      setMessages(loaded.messages);
-      await refreshConversations();
     } catch (requestError) {
-      setMessages((current) => current.filter((message) => !message.id.startsWith("pending-")));
+      setMessages((current) => current.filter((message) => message.id !== pendingUserId && message.id !== streamingAssistantId));
       setInput(content);
       setError(requestError instanceof Error ? requestError.message : "Could not send the message.");
     } finally {
@@ -290,7 +379,23 @@ export function AIPlayground({
             <h1 className="truncate text-sm font-semibold">{activeConversation?.title ?? "New AI test"}</h1>
             <p className="mt-0.5 text-xs text-zinc-400">Model: {configuredModel}</p>
           </div>
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-[0.65rem] font-semibold text-amber-700 ring-1 ring-amber-200">Private admin test</span>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-zinc-500">
+              Reasoning
+              <select
+                value={reasoningEffort}
+                onChange={(event) => setReasoningEffort(event.target.value as PlaygroundReasoningEffort)}
+                disabled={sending}
+                className="ml-2 rounded-lg border border-zinc-200 bg-white px-2 py-1.5 text-xs font-semibold text-zinc-700"
+              >
+                <option value="none">None</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <span className="hidden rounded-full bg-amber-50 px-3 py-1 text-[0.65rem] font-semibold text-amber-700 ring-1 ring-amber-200 sm:inline">Private admin test</span>
+          </div>
         </header>
 
         {!apiKeyConfigured && (
@@ -312,7 +417,6 @@ export function AIPlayground({
               ) : (
                 <AssistantMessage key={message.id} message={message} onFeedback={saveFeedback} />
               ))}
-              {sending && <div className="flex items-center gap-2 text-xs text-zinc-400"><LoaderCircle className="size-4 animate-spin" /> Improism AI is reasoning…</div>}
             </div>
           ) : (
             <div className="mx-auto flex min-h-96 max-w-xl flex-col items-center justify-center text-center">

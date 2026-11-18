@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AIPlayground } from "@/components/admin/ai-playground";
 import { requireAdmin } from "@/lib/admin/auth";
+import { configuredModel, configuredReasoningEffort } from "@/lib/ai/improism-controller";
 import type { PlaygroundConversation } from "@/lib/ai/types";
 
 export const metadata: Metadata = {
@@ -29,7 +30,8 @@ export default async function AIPlaygroundPage() {
   return (
     <AIPlayground
       initialConversations={conversations}
-      configuredModel={process.env.OPENAI_MODEL?.trim() || "gpt-6-luna"}
+      configuredModel={configuredModel()}
+      configuredReasoningEffort={configuredReasoningEffort()}
       apiKeyConfigured={Boolean(process.env.OPENAI_API_KEY?.trim())}
     />
   );

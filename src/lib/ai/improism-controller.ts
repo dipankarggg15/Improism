@@ -1,8 +1,13 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import OpenAI from "openai";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { GoverningDocumentSnapshot, PlaygroundMessage } from "@/lib/ai/types";
+import type {
+  GoverningDocumentSnapshot,
+  PlaygroundMessage,
+  PlaygroundReasoningEffort,
+} from "@/lib/ai/types";
 
 const MAX_MESSAGE_CHARACTERS = 8000;
 const MAX_HISTORY_CHARACTERS = 40000;
@@ -10,11 +15,17 @@ const MAX_INSTRUCTION_CHARACTERS = 200000;
 const MAX_OUTPUT_TOKENS = 900;
 const REQUESTS_PER_MINUTE = 10;
 const REQUESTS_PER_DAY = 100;
+const SUPPORTED_EFFORTS = new Set<PlaygroundReasoningEffort>(["none", "low", "medium", "high"]);
 
 type GoverningDocument = GoverningDocumentSnapshot & { content: string };
 
-function configuredModel() {
+export function configuredModel() {
   return process.env.OPENAI_MODEL?.trim() || "gpt-6-luna";
+}
+
+export function configuredReasoningEffort(): PlaygroundReasoningEffort {
+  const value = process.env.OPENAI_REASONING_EFFORT?.trim() as PlaygroundReasoningEffort | undefined;
+  return value && SUPPORTED_EFFORTS.has(value) ? value : "low";
 }
 
 function extractVersion(content: string) {
@@ -22,44 +33,33 @@ function extractVersion(content: string) {
   return match?.[1]?.trim() || "Not specified";
 }
 
-async function loadGoverningDocuments(supabase: SupabaseClient): Promise<GoverningDocument[]> {
-  const [rulesResult, principlesResult] = await Promise.all([
-    supabase
-      .from("ai_rules")
-      .select("id, rule_number, title, content, updated_at")
-      .order("rule_number", { ascending: true }),
-    supabase
-      .from("brain_principles")
-      .select("id, principle_number, title, content, updated_at")
-      .order("principle_number", { ascending: true }),
-  ]);
+async function loadGoverningDocuments(supabase: SupabaseClient) {
+  const started = performance.now();
+  const { data, error } = await supabase.rpc("get_ai_governing_documents");
+  if (error) throw new Error(`Could not load Improism Brain: ${error.message}`);
 
-  if (rulesResult.error) throw new Error(`Could not load AI Rules: ${rulesResult.error.message}`);
-  if (principlesResult.error) throw new Error(`Could not load Improism Brain: ${principlesResult.error.message}`);
-
-  const rules: GoverningDocument[] = (rulesResult.data ?? []).map((rule) => ({
-    kind: "ai_rule",
-    id: rule.id,
-    number: rule.rule_number,
-    title: rule.title,
-    version: extractVersion(rule.content),
-    updatedAt: rule.updated_at,
-    content: rule.content,
-  }));
-  const principles: GoverningDocument[] = (principlesResult.data ?? []).map((principle) => ({
-    kind: "brain_principle",
-    id: principle.id,
-    number: principle.principle_number,
-    title: principle.title,
-    version: extractVersion(principle.content),
-    updatedAt: principle.updated_at,
-    content: principle.content,
+  const documents: GoverningDocument[] = (data ?? []).map((document: {
+    kind: "ai_rule" | "brain_principle";
+    id: string;
+    document_number: number;
+    title: string;
+    content: string;
+    updated_at: string;
+  }) => ({
+    kind: document.kind,
+    id: document.id,
+    number: document.document_number,
+    title: document.title,
+    version: extractVersion(document.content),
+    updatedAt: document.updated_at,
+    content: document.content,
   }));
 
-  if (!rules.length || !principles.length) {
+  if (!documents.some((document) => document.kind === "ai_rule")
+    || !documents.some((document) => document.kind === "brain_principle")) {
     throw new Error("Improism AI requires at least one AI Rule and one Brain principle.");
   }
-  return [...rules, ...principles];
+  return { documents, durationMs: Math.round(performance.now() - started) };
 }
 
 function assembleInstructions(documents: GoverningDocument[]) {
@@ -97,55 +97,52 @@ function boundedHistory(rows: Array<{ role: "user" | "assistant"; content: strin
 }
 
 async function enforceRateLimit(supabase: SupabaseClient, userId: string) {
-  const { data: conversations, error: conversationError } = await supabase
-    .from("ai_test_conversations")
-    .select("id")
-    .eq("user_id", userId);
-  if (conversationError) throw new Error(conversationError.message);
-  const ids = (conversations ?? []).map((conversation) => conversation.id);
-  if (!ids.length) return;
-
   const now = Date.now();
   const minuteAgo = new Date(now - 60_000).toISOString();
   const dayAgo = new Date(now - 86_400_000).toISOString();
-  const [minuteResult, dayResult] = await Promise.all([
-    supabase
-      .from("ai_test_messages")
-      .select("id", { count: "exact", head: true })
-      .in("conversation_id", ids)
-      .eq("role", "user")
-      .gte("created_at", minuteAgo),
-    supabase
-      .from("ai_test_messages")
-      .select("id", { count: "exact", head: true })
-      .in("conversation_id", ids)
-      .eq("role", "user")
-      .gte("created_at", dayAgo),
-  ]);
-  if (minuteResult.error || dayResult.error) throw new Error("Could not verify the playground request limit.");
-  if ((minuteResult.count ?? 0) >= REQUESTS_PER_MINUTE) {
-    throw new Error("Rate limit reached. Wait one minute before sending another message.");
-  }
-  if ((dayResult.count ?? 0) >= REQUESTS_PER_DAY) {
+  const { data, error } = await supabase
+    .from("ai_test_messages")
+    .select("created_at, ai_test_conversations!inner(user_id)")
+    .eq("role", "user")
+    .eq("ai_test_conversations.user_id", userId)
+    .gte("created_at", dayAgo)
+    .order("created_at", { ascending: false })
+    .limit(REQUESTS_PER_DAY + 1);
+  if (error) throw new Error("Could not verify the playground request limit.");
+  if ((data ?? []).length >= REQUESTS_PER_DAY) {
     throw new Error("Daily playground request limit reached. Try again tomorrow.");
+  }
+  const requestsInLastMinute = (data ?? []).filter((row) => row.created_at >= minuteAgo).length;
+  if (requestsInLastMinute >= REQUESTS_PER_MINUTE) {
+    throw new Error("Rate limit reached. Wait one minute before sending another message.");
   }
 }
 
-export async function sendImproismPlaygroundMessage({
+function cacheKey(userId: string) {
+  return `improism:${createHash("sha256").update(userId).digest("hex").slice(0, 24)}`;
+}
+
+export async function streamImproismPlaygroundMessage({
   supabase,
   userId,
   conversationId,
   message,
+  reasoningEffort = configuredReasoningEffort(),
+  onTextDelta,
 }: {
   supabase: SupabaseClient;
   userId: string;
   conversationId: string;
   message: string;
+  reasoningEffort?: PlaygroundReasoningEffort;
+  onTextDelta?: (delta: string) => void;
 }): Promise<PlaygroundMessage> {
+  const totalStarted = performance.now();
   const content = message.trim();
   if (!content || content.length > MAX_MESSAGE_CHARACTERS) {
     throw new Error(`Message must be between 1 and ${MAX_MESSAGE_CHARACTERS.toLocaleString()} characters.`);
   }
+  if (!SUPPORTED_EFFORTS.has(reasoningEffort)) throw new Error("Unsupported reasoning effort.");
   if (!process.env.OPENAI_API_KEY?.trim()) throw new Error("OPENAI_API_KEY is not configured.");
 
   const { data: conversation, error: conversationError } = await supabase
@@ -166,7 +163,7 @@ export async function sendImproismPlaygroundMessage({
   if (userMessageError || !userMessage) throw new Error(userMessageError?.message || "Could not save the message.");
 
   try {
-    const [{ data: rawHistory, error: historyError }, documents] = await Promise.all([
+    const [{ data: rawHistory, error: historyError }, governing] = await Promise.all([
       supabase
         .from("ai_test_messages")
         .select("role, content, created_at")
@@ -183,17 +180,49 @@ export async function sendImproismPlaygroundMessage({
     })));
     const model = configuredModel();
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const response = await client.responses.create({
+    const openAIStarted = performance.now();
+    let firstTokenMs: number | null = null;
+    let answer = "";
+    let completedResponse: OpenAI.Responses.Response | null = null;
+    const stream = await client.responses.create({
       model,
-      instructions: assembleInstructions(documents),
-      input: history,
+      input: [
+        {
+          role: "developer",
+          content: [{
+            type: "input_text",
+            text: assembleInstructions(governing.documents),
+            prompt_cache_breakpoint: { mode: "explicit", ttl: "30m" },
+          }],
+        },
+        ...history,
+      ],
+      reasoning: { effort: reasoningEffort },
+      prompt_cache_key: cacheKey(userId),
+      prompt_cache_options: { mode: "explicit", ttl: "30m" },
+      stream: true,
+      stream_options: { include_obfuscation: false },
       max_output_tokens: MAX_OUTPUT_TOKENS,
       store: false,
     });
-    const answer = response.output_text.trim();
-    if (!answer) throw new Error("OpenAI returned an empty response.");
 
-    const snapshot: GoverningDocumentSnapshot[] = documents.map((document) => ({
+    for await (const event of stream) {
+      if (event.type === "response.output_text.delta") {
+        if (firstTokenMs === null) firstTokenMs = Math.round(performance.now() - openAIStarted);
+        answer += event.delta;
+        onTextDelta?.(event.delta);
+      } else if (event.type === "response.completed") {
+        completedResponse = event.response;
+      } else if (event.type === "response.failed") {
+        throw new Error(event.response.error?.message || "OpenAI could not complete the response.");
+      }
+    }
+
+    const completionMs = Math.round(performance.now() - openAIStarted);
+    answer = answer.trim();
+    if (!answer || !completedResponse) throw new Error("OpenAI returned an incomplete response.");
+
+    const snapshot: GoverningDocumentSnapshot[] = governing.documents.map((document) => ({
       kind: document.kind,
       id: document.id,
       number: document.number,
@@ -201,21 +230,30 @@ export async function sendImproismPlaygroundMessage({
       version: document.version,
       updatedAt: document.updatedAt,
     }));
-    const usage = response.usage;
+    const usage = completedResponse.usage;
+    const totalDurationMs = Math.round(performance.now() - totalStarted);
     const { data: assistantMessage, error: assistantError } = await supabase
       .from("ai_test_messages")
       .insert({
         conversation_id: conversationId,
         role: "assistant",
         content: answer,
-        model: response.model || model,
+        model: completedResponse.model || model,
         input_tokens: usage?.input_tokens ?? null,
         output_tokens: usage?.output_tokens ?? null,
         total_tokens: usage?.total_tokens ?? null,
-        openai_response_id: response.id,
+        cached_input_tokens: usage?.input_tokens_details?.cached_tokens ?? null,
+        cache_write_tokens: usage?.input_tokens_details?.cache_write_tokens ?? null,
+        reasoning_tokens: usage?.output_tokens_details?.reasoning_tokens ?? null,
+        reasoning_effort: reasoningEffort,
+        total_duration_ms: totalDurationMs,
+        brain_load_ms: governing.durationMs,
+        first_token_ms: firstTokenMs,
+        completion_ms: completionMs,
+        openai_response_id: completedResponse.id,
         governing_documents: snapshot,
       })
-      .select("id, conversation_id, role, content, model, input_tokens, output_tokens, total_tokens, governing_documents, created_at")
+      .select("id, conversation_id, role, content, model, input_tokens, output_tokens, total_tokens, cached_input_tokens, cache_write_tokens, reasoning_tokens, reasoning_effort, total_duration_ms, brain_load_ms, first_token_ms, completion_ms, governing_documents, created_at")
       .single();
     if (assistantError || !assistantMessage) throw new Error(assistantError?.message || "Could not save the AI response.");
 
@@ -232,6 +270,14 @@ export async function sendImproismPlaygroundMessage({
       inputTokens: assistantMessage.input_tokens,
       outputTokens: assistantMessage.output_tokens,
       totalTokens: assistantMessage.total_tokens,
+      cachedInputTokens: assistantMessage.cached_input_tokens,
+      cacheWriteTokens: assistantMessage.cache_write_tokens,
+      reasoningTokens: assistantMessage.reasoning_tokens,
+      reasoningEffort: assistantMessage.reasoning_effort,
+      totalDurationMs: assistantMessage.total_duration_ms,
+      brainLoadMs: assistantMessage.brain_load_ms,
+      firstTokenMs: assistantMessage.first_token_ms,
+      completionMs: assistantMessage.completion_ms,
       governingDocuments: assistantMessage.governing_documents as GoverningDocumentSnapshot[],
       feedback: null,
       createdAt: assistantMessage.created_at,

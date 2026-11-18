@@ -2,6 +2,7 @@
 
 import {
   Bold,
+  Bot,
   BrainCircuit,
   Heading2,
   Heading3,
@@ -20,7 +21,9 @@ import {
 } from "lucide-react";
 import { useActionState, useRef, useState, type MouseEvent } from "react";
 import {
+  deleteAIRule,
   deleteBrainPrinciple,
+  saveAIRule,
   saveBrainPrinciple,
   type AdminActionState,
 } from "@/app/admin/actions";
@@ -53,13 +56,17 @@ const formatActions: FormatAction[] = [
 ];
 
 function BrainEditor({
+  kind,
   initial,
   onCancel,
 }: {
+  kind: "brain" | "ai-rules";
   initial?: BrainPrinciple;
   onCancel: () => void;
 }) {
-  const [state, formAction, pending] = useActionState<AdminActionState, FormData>(saveBrainPrinciple, {});
+  const saveAction = kind === "brain" ? saveBrainPrinciple : saveAIRule;
+  const noun = kind === "brain" ? "principle" : "rule";
+  const [state, formAction, pending] = useActionState<AdminActionState, FormData>(saveAction, {});
   const [content, setContent] = useState(initial?.content ?? "");
   const editorRef = useRef<HTMLDivElement>(null);
 
@@ -70,14 +77,14 @@ function BrainEditor({
   }
 
   return (
-    <section id="brain-editor" className="scroll-mt-24 rounded-3xl border border-zinc-300 bg-white p-5 shadow-xl shadow-zinc-200/60 sm:p-7">
+    <section id={kind === "brain" ? "brain-editor" : "ai-rules-editor"} className="scroll-mt-24 rounded-3xl border border-zinc-300 bg-white p-5 shadow-xl shadow-zinc-200/60 sm:p-7">
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
-            {initial ? `Editing principle ${initial.principleNumber}` : "New principle"}
+            {initial ? `Editing ${noun} ${initial.principleNumber}` : `New ${noun}`}
           </p>
           <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em]">
-            {initial ? "Refine this principle" : "Add to the Improism philosophy"}
+            {initial ? `Refine this ${noun}` : kind === "brain" ? "Add to the Improism philosophy" : "Add to Improism AI guidance"}
           </h2>
         </div>
         <button type="button" onClick={onCancel} className="grid size-9 place-items-center rounded-full text-zinc-500 hover:bg-zinc-100" aria-label="Close editor">
@@ -95,7 +102,7 @@ function BrainEditor({
         )}
         <div className="grid gap-5 sm:grid-cols-[150px_minmax(0,1fr)]">
           <label>
-            <span className="admin-label">Principle number</span>
+            <span className="admin-label">{kind === "brain" ? "Principle" : "Rule"} number</span>
             <input
               type="number"
               name="principleNumber"
@@ -117,7 +124,7 @@ function BrainEditor({
               maxLength={200}
               required
               className="admin-input"
-              placeholder="The principle in one clear sentence"
+              placeholder={kind === "brain" ? "The principle in one clear sentence" : "The rule in one clear sentence"}
             />
           </label>
         </div>
@@ -157,7 +164,7 @@ function BrainEditor({
             onInput={(event) => setContent(event.currentTarget.innerHTML)}
             dangerouslySetInnerHTML={{ __html: initial?.content ?? "" }}
             className="admin-rich min-h-80 rounded-xl border border-zinc-300 bg-white px-5 py-4 text-base leading-7 outline-none focus:border-black focus:ring-2 focus:ring-black/10"
-            data-placeholder="Write the principle, its reasoning, examples, and instructions…"
+            data-placeholder={`Write the ${noun}, its reasoning, examples, and instructions…`}
           />
           <p className="mt-2 text-right text-xs text-zinc-400">
             {content.replace(/<[^>]+>/g, " ").trim().length.toLocaleString()} characters
@@ -169,7 +176,7 @@ function BrainEditor({
             Cancel
           </button>
           <button type="submit" disabled={pending} className="inline-flex h-11 items-center gap-2 rounded-xl bg-black px-5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50">
-            <Save className="size-4" /> {pending ? "Saving…" : initial ? "Update principle" : "Save principle"}
+            <Save className="size-4" /> {pending ? "Saving…" : initial ? `Update ${noun}` : `Save ${noun}`}
           </button>
         </div>
       </form>
@@ -177,20 +184,33 @@ function BrainEditor({
   );
 }
 
-export function BrainBook({ principles, notice }: { principles: BrainPrinciple[]; notice?: string }) {
+function NumberedAdminBook({
+  kind,
+  entries: principles,
+  notice,
+}: {
+  kind: "brain" | "ai-rules";
+  entries: BrainPrinciple[];
+  notice?: string;
+}) {
+  const brain = kind === "brain";
+  const noun = brain ? "principle" : "rule";
+  const anchorPrefix = brain ? "principle" : "rule";
+  const editorId = brain ? "brain-editor" : "ai-rules-editor";
+  const deleteAction = brain ? deleteBrainPrinciple : deleteAIRule;
   const [editing, setEditing] = useState<BrainPrinciple | "new" | null>(null);
 
   function openEditor(principle: BrainPrinciple | "new") {
     setEditing(principle);
     window.requestAnimationFrame(() => {
-      document.getElementById("brain-editor")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById(editorId)?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   }
 
   function visitPrinciple(event: MouseEvent<HTMLAnchorElement>, id: string) {
     event.preventDefault();
-    window.history.pushState(null, "", `#principle-${id}`);
-    document.getElementById(`principle-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.history.pushState(null, "", `#${anchorPrefix}-${id}`);
+    document.getElementById(`${anchorPrefix}-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   return (
@@ -198,15 +218,17 @@ export function BrainBook({ principles, notice }: { principles: BrainPrinciple[]
       <header className="mb-8 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            <BrainCircuit className="size-4" /> Admin philosophy library
+            {brain ? <BrainCircuit className="size-4" /> : <Bot className="size-4" />} {brain ? "Admin philosophy library" : "Admin AI instruction library"}
           </div>
-          <h1 className="mt-3 text-4xl font-semibold tracking-[-0.055em] sm:text-5xl">Improism Brain</h1>
+          <h1 className="mt-3 text-4xl font-semibold tracking-[-0.055em] sm:text-5xl">{brain ? "Improism Brain" : "AI Rules"}</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600">
-            The canonical book of Improism principles, philosophies, reasoning methods, and instructions.
+            {brain
+              ? "The canonical book of Improism principles, philosophies, reasoning methods, and instructions."
+              : "The canonical book of identity, communication, reasoning, and responsibility rules for Improism AI."}
           </p>
         </div>
         <button type="button" onClick={() => openEditor("new")} className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-black px-4 text-sm font-semibold text-white hover:bg-zinc-800">
-          <Plus className="size-4" /> New principle
+          <Plus className="size-4" /> New {noun}
         </button>
       </header>
 
@@ -216,6 +238,7 @@ export function BrainBook({ principles, notice }: { principles: BrainPrinciple[]
         <div className="mb-8">
           <BrainEditor
             key={editing === "new" ? "new" : editing.id}
+            kind={kind}
             initial={editing === "new" ? undefined : editing}
             onCancel={() => setEditing(null)}
           />
@@ -230,7 +253,7 @@ export function BrainBook({ principles, notice }: { principles: BrainPrinciple[]
             {principles.map((principle) => (
               <li key={principle.id}>
                 <a
-                  href={`#principle-${principle.id}`}
+                  href={`#${anchorPrefix}-${principle.id}`}
                   onClick={(event) => visitPrinciple(event, principle.id)}
                   className="group grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-3 py-3.5 text-sm hover:text-zinc-500"
                 >
@@ -243,7 +266,7 @@ export function BrainBook({ principles, notice }: { principles: BrainPrinciple[]
           </ol>
         ) : (
           <div className="mt-6 rounded-2xl border border-dashed border-zinc-300 px-6 py-10 text-center">
-            <p className="text-sm font-semibold">The book is ready for its first principle.</p>
+            <p className="text-sm font-semibold">The book is ready for its first {noun}.</p>
             <p className="mt-1 text-sm text-zinc-500">No sample content has been added.</p>
           </div>
         )}
@@ -252,31 +275,31 @@ export function BrainBook({ principles, notice }: { principles: BrainPrinciple[]
       <div className="mt-8 space-y-8">
         {principles.map((principle) => (
           <article
-            id={`principle-${principle.id}`}
+            id={`${anchorPrefix}-${principle.id}`}
             key={principle.id}
             className="scroll-mt-24 rounded-3xl border border-zinc-200 bg-white px-6 py-8 shadow-sm sm:px-10 sm:py-11"
           >
             <div className="flex items-start justify-between gap-5 border-b border-zinc-100 pb-6">
               <div>
                 <p className="font-mono text-xs font-semibold uppercase tracking-[0.16em] text-zinc-400">
-                  Principle {principle.principleNumber}
+                  {brain ? "Principle" : "Rule"} {principle.principleNumber}
                 </p>
                 <h2 className="mt-3 max-w-3xl text-2xl font-semibold leading-tight tracking-[-0.04em] sm:text-3xl">
                   {principle.title}
                 </h2>
               </div>
               <div className="flex shrink-0 items-center gap-1">
-                <button type="button" onClick={() => openEditor(principle)} className="grid size-9 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-black" title="Edit principle" aria-label={`Edit principle ${principle.principleNumber}`}>
+                <button type="button" onClick={() => openEditor(principle)} className="grid size-9 place-items-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-black" title={`Edit ${noun}`} aria-label={`Edit ${noun} ${principle.principleNumber}`}>
                   <Pencil className="size-4" />
                 </button>
                 <form
-                  action={deleteBrainPrinciple}
+                  action={deleteAction}
                   onSubmit={(event) => {
-                    if (!window.confirm(`Delete Principle ${principle.principleNumber}: ${principle.title}? This cannot be undone.`)) event.preventDefault();
+                    if (!window.confirm(`Delete ${brain ? "Principle" : "Rule"} ${principle.principleNumber}: ${principle.title}? This cannot be undone.`)) event.preventDefault();
                   }}
                 >
                   <input type="hidden" name="id" value={principle.id} />
-                  <button type="submit" className="grid size-9 place-items-center rounded-lg text-zinc-400 hover:bg-red-50 hover:text-red-700" title="Delete principle" aria-label={`Delete principle ${principle.principleNumber}`}>
+                  <button type="submit" className="grid size-9 place-items-center rounded-lg text-zinc-400 hover:bg-red-50 hover:text-red-700" title={`Delete ${noun}`} aria-label={`Delete ${noun} ${principle.principleNumber}`}>
                     <Trash2 className="size-4" />
                   </button>
                 </form>
@@ -291,4 +314,12 @@ export function BrainBook({ principles, notice }: { principles: BrainPrinciple[]
       </div>
     </div>
   );
+}
+
+export function BrainBook({ principles, notice }: { principles: BrainPrinciple[]; notice?: string }) {
+  return <NumberedAdminBook kind="brain" entries={principles} notice={notice} />;
+}
+
+export function AIRulesBook({ rules, notice }: { rules: BrainPrinciple[]; notice?: string }) {
+  return <NumberedAdminBook kind="ai-rules" entries={rules} notice={notice} />;
 }

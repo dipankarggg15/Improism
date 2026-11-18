@@ -291,3 +291,63 @@ export async function deleteBrainPrinciple(formData: FormData) {
   revalidatePath("/admin/brain");
   redirect("/admin/brain?deleted=1");
 }
+
+export async function saveAIRule(
+  _state: AdminActionState,
+  formData: FormData,
+): Promise<AdminActionState> {
+  let savedId = "";
+  try {
+    const { supabase, user } = await assertAdmin();
+    const existingId = text(formData.get("id"));
+    const id = existingId || crypto.randomUUID();
+    const numberValue = text(formData.get("principleNumber"));
+    const ruleNumber = Number(numberValue);
+    const title = text(formData.get("title"));
+    const content = sanitizeRichText(text(formData.get("content")));
+    const plainContent = content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+    if (!Number.isInteger(ruleNumber) || ruleNumber < 1 || ruleNumber > 9999) {
+      return { error: "Rule number must be a whole number between 1 and 9,999." };
+    }
+    const titleError = validateTitle(title);
+    if (titleError) return { error: titleError };
+    if (!plainContent) return { error: "Add content for this AI rule." };
+    if (content.length > 100000) return { error: "AI rule content must be 100,000 characters or fewer." };
+    if (existingId && !/^[0-9a-f-]{36}$/i.test(existingId)) return { error: "Invalid AI rule." };
+
+    if (existingId) {
+      const { data: existing, error: findError } = await supabase
+        .from("ai_rules")
+        .select("id")
+        .eq("id", existingId)
+        .single();
+      if (findError || !existing) return { error: "AI rule not found." };
+    }
+
+    const payload = { rule_number: ruleNumber, title, content };
+    const result = existingId
+      ? await supabase.from("ai_rules").update(payload).eq("id", id)
+      : await supabase.from("ai_rules").insert({ id, ...payload, created_by: user.id });
+    if (result.error) {
+      if (result.error.code === "23505") return { error: `AI Rule ${ruleNumber} already exists.` };
+      return { error: result.error.message };
+    }
+    savedId = id;
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Could not save the AI rule." };
+  }
+
+  revalidatePath("/admin/ai-rules");
+  redirect(`/admin/ai-rules?saved=1#rule-${savedId}`);
+}
+
+export async function deleteAIRule(formData: FormData) {
+  const { supabase } = await assertAdmin();
+  const id = text(formData.get("id"));
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Invalid AI rule.");
+  const { error } = await supabase.from("ai_rules").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin/ai-rules");
+  redirect("/admin/ai-rules?deleted=1");
+}

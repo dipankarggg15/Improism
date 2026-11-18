@@ -2,6 +2,7 @@
 
 import {
   BrainCircuit,
+  Bot,
   BookOpenText,
   FileText,
   Gauge,
@@ -22,6 +23,7 @@ const nav = [
   { href: "/admin/articles", label: "Articles", icon: BookOpenText },
   { href: "/admin/subjects", label: "Subjects", icon: Tags },
   { href: "/admin/brain", label: "Improism Brain", icon: BrainCircuit },
+  { href: "/admin/ai-rules", label: "AI Rules", icon: Bot },
 ];
 
 function Sidebar({ close, name }: { close?: () => void; name: string }) {

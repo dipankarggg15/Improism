@@ -9,6 +9,7 @@ import {
   Leaf,
   LogOut,
   PanelLeft,
+  FlaskConical,
   Tags,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const nav = [
   { href: "/admin/subjects", label: "Subjects", icon: Tags },
   { href: "/admin/brain", label: "Improism Brain", icon: BrainCircuit },
   { href: "/admin/ai-rules", label: "AI Rules", icon: Bot },
+  { href: "/admin/ai-playground", label: "AI Playground", icon: FlaskConical },
 ];
 
 function Sidebar({ close, name }: { close?: () => void; name: string }) {

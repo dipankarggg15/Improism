@@ -37,6 +37,14 @@ const suggestions = [
   "What makes a life feel meaningful?",
 ];
 
+function DevelopmentBadge() {
+  return (
+    <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-amber-700">
+      Under development
+    </span>
+  );
+}
+
 const navItems = [
   { label: "Home", icon: Home, href: "/" },
   { label: "AI", icon: Sparkles, href: "/ai", active: true },
@@ -250,9 +258,12 @@ function EmptyState({ onSuggestion }: { onSuggestion: (prompt: string) => void }
       <span className="grid size-14 place-items-center rounded-full bg-black text-white shadow-[0_14px_40px_rgba(0,0,0,0.14)]">
         <Sparkles className="size-5" aria-hidden="true" />
       </span>
-      <p className="mt-6 text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-zinc-400">
-        Improism AI
-      </p>
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
+        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+          Improism AI
+        </p>
+        <DevelopmentBadge />
+      </div>
       <h1 className="mt-2 text-3xl font-semibold leading-tight tracking-[-0.05em] sm:text-4xl">
         What would you like to think through?
       </h1>
@@ -318,7 +329,7 @@ function Composer({
           </button>
         </div>
         <p className="mt-2 text-center text-[0.65rem] text-zinc-400">
-          Prototype responses are local mock content. Improism AI can make mistakes.
+          Under development · Responses are local mock content and may be inaccurate.
         </p>
       </div>
     </div>
@@ -481,7 +492,8 @@ export function AiChat({
             Improism AI
           </p>
           <p className="mt-2 text-sm font-medium leading-5">A place to think, question, and understand.</p>
-          <p className="mt-2 text-[0.68rem] leading-5 text-zinc-400">Prototype · Local mock data</p>
+          <div className="mt-3"><DevelopmentBadge /></div>
+          <p className="mt-2 text-[0.68rem] leading-5 text-zinc-400">Local mock data</p>
         </div>
       </aside>
 
@@ -506,9 +518,12 @@ export function AiChat({
             </button>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold sm:text-base">{activeTitle}</p>
-              <p className="text-[0.66rem] text-zinc-400">
-                {referencedPost ? "Post discussion" : referencedJourney ? "Journey review" : "Improism AI · Prototype"}
-              </p>
+              <div className="mt-0.5 flex items-center gap-2">
+                <p className="text-[0.66rem] text-zinc-400">
+                  {referencedPost ? "Post discussion" : referencedJourney ? "Journey review" : "Improism AI"}
+                </p>
+                <DevelopmentBadge />
+              </div>
             </div>
           </div>
           <button

@@ -384,10 +384,12 @@ export function AiChat({
   initialPostId,
   initialConversationId,
   initialJourneyId,
+  developmentOnly = false,
 }: {
   initialPostId?: string;
   initialConversationId?: string;
   initialJourneyId?: string;
+  developmentOnly?: boolean;
 }) {
   const { journeys } = useJourneys();
   const initialPost = initialPostId
@@ -478,6 +480,69 @@ export function AiChat({
 
   function showPlaceholder(label: string) {
     setNotice(`${label} is a prototype preview for now.`);
+  }
+
+  if (developmentOnly) {
+    return (
+      <div className="relative h-dvh overflow-hidden bg-white text-black md:grid md:grid-cols-[190px_minmax(0,1fr)] lg:grid-cols-[190px_280px_minmax(0,1fr)]">
+        <aside className="hidden h-dvh flex-col border-r border-zinc-200 px-5 py-7 md:flex">
+          <Brand />
+          <div className="mt-10">
+            <PrimaryNavigation onPlaceholder={showPlaceholder} />
+          </div>
+          <div className="mt-auto rounded-2xl border border-zinc-200 p-4">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.15em] text-zinc-400">
+              Improism AI
+            </p>
+            <p className="mt-2 text-sm font-medium leading-5">A place to think, question, and understand.</p>
+          </div>
+        </aside>
+
+        <aside className="hidden h-dvh border-r border-zinc-200 bg-zinc-50 lg:block">
+          <div className="border-b border-zinc-200 p-4">
+            <button
+              type="button"
+              disabled
+              className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-zinc-200 px-4 py-3 text-sm font-semibold text-zinc-400"
+            >
+              <PenLine className="size-4" aria-hidden="true" />
+              New conversation
+            </button>
+          </div>
+          <p className="px-5 py-4 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-400">
+            Recent
+          </p>
+        </aside>
+
+        <main className="flex min-h-0 flex-col">
+          <header className="flex h-16 shrink-0 items-center border-b border-zinc-200 px-4 sm:px-5">
+            <div>
+              <p className="text-sm font-semibold sm:text-base">Improism AI</p>
+              <p className="text-[0.66rem] text-zinc-400">AI conversations</p>
+            </div>
+          </header>
+          <div className="grid min-h-0 flex-1 place-items-center px-6 pb-20 text-center md:pb-0">
+            <h1 className="text-4xl font-semibold tracking-[-0.05em] sm:text-6xl lg:text-7xl">
+              Under development
+            </h1>
+          </div>
+        </main>
+
+        <MobileNavigation onPlaceholder={showPlaceholder} />
+
+        {notice && (
+          <div
+            className="fixed inset-x-4 bottom-24 z-[60] mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl bg-black px-4 py-3 text-sm text-white shadow-2xl md:bottom-6"
+            role="status"
+          >
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice("")} aria-label="Dismiss notice">
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (

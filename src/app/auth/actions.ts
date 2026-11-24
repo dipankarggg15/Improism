@@ -118,3 +118,11 @@ export async function logout() {
   }
   redirect("/login");
 }
+
+export async function deleteAccount() {
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("delete_my_account");
+  if (error) throw new Error(error.message);
+  await supabase.auth.signOut();
+  redirect("/signup?deleted=1");
+}

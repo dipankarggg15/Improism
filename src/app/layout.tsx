@@ -6,7 +6,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Improism",
   description:
-    "Ideas, conversations, and personal journeys for a more intentional life.",
+    "Ideas and personal journeys for a more intentional life.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

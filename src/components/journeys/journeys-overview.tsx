@@ -6,16 +6,14 @@ import {
   Check,
   ChevronRight,
   Circle,
-  MessageCircleMore,
   Plus,
   Route,
-  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { useJourneys } from "@/components/journeys/journeys-provider";
 
 export function JourneysOverview() {
-  const { journeys, toggleActivity } = useJourneys();
+  const { journeys, loading, error, toggleActivity } = useJourneys();
   const activeJourneys = journeys.filter((journey) => journey.status === "active");
   const todayActivities = activeJourneys.flatMap((journey) =>
     journey.activities.map((activity) => ({
@@ -51,7 +49,11 @@ export function JourneysOverview() {
         </Link>
       </header>
 
-      <section className="mt-8 overflow-hidden rounded-[1.4rem] border border-zinc-200 bg-white shadow-[0_14px_40px_rgba(0,0,0,0.05)]">
+      {loading && <div className="mt-8 h-48 animate-pulse rounded-[1.4rem] bg-zinc-100" aria-label="Loading journeys" />}
+      {!loading && error && <div className="mt-8 rounded-[1.4rem] border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">{error}</div>}
+      {!loading && !error && journeys.length === 0 && <section className="mt-8 rounded-[1.4rem] border border-dashed border-zinc-300 px-6 py-12 text-center"><Route className="mx-auto size-7 text-zinc-400" /><h2 className="mt-3 text-lg font-semibold">Start your first Journey</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">Turn an intention into a few practical activities and private reflections.</p><Link href="/journeys/new" className="mt-5 inline-flex rounded-full bg-black px-5 py-2.5 text-sm font-semibold text-white">Create a Journey</Link></section>}
+
+      {!loading && !error && journeys.length > 0 && <section className="mt-8 overflow-hidden rounded-[1.4rem] border border-zinc-200 bg-white shadow-[0_14px_40px_rgba(0,0,0,0.05)]">
         <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4 sm:px-6">
           <div>
             <div className="flex items-center gap-2">
@@ -111,9 +113,9 @@ export function JourneysOverview() {
             </div>
           ))}
         </div>
-      </section>
+      </section>}
 
-      <section className="mt-10">
+      {!loading && !error && activeJourneys.length > 0 && <section className="mt-10">
         <div className="flex items-end justify-between gap-4">
           <div>
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-zinc-400">
@@ -219,41 +221,8 @@ export function JourneysOverview() {
             );
           })}
         </div>
-      </section>
+      </section>}
 
-      <section className="mt-10 grid overflow-hidden rounded-[1.4rem] border border-zinc-200 bg-zinc-100 lg:grid-cols-[1fr_280px]">
-        <div className="p-6 sm:p-8">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.15em] text-zinc-500">
-            <Sparkles className="size-4" aria-hidden="true" />
-            Reflect with Improism AI
-          </div>
-          <h2 className="mt-4 max-w-xl text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">
-            Progress is easier to understand when you pause long enough to notice it.
-          </h2>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-500">
-            Review what is working, name what feels difficult, and receive a gentle sample reflection based on your journey activity.
-          </p>
-          <Link
-            href={`/ai?journey=${activeJourneys[0]?.id ?? "calmer-mornings"}`}
-            className="mt-6 inline-flex items-center gap-2 rounded-full bg-black px-4 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800"
-          >
-            <MessageCircleMore className="size-4" aria-hidden="true" />
-            Review with AI
-          </Link>
-        </div>
-        <div className="relative hidden overflow-hidden bg-black lg:block">
-          <div className="absolute -right-12 -top-12 size-44 rounded-full border border-white/30" />
-          <div className="absolute -right-4 top-0 size-28 rounded-full border border-white/20" />
-          <div className="absolute bottom-8 left-8 right-8 text-white">
-            <p className="text-sm leading-6 text-white/60">
-              “Your consistency is growing most when the activity is easy to begin.”
-            </p>
-            <p className="mt-3 text-[0.65rem] font-semibold uppercase tracking-[0.15em]">
-              Sample insight
-            </p>
-          </div>
-        </div>
-      </section>
     </div>
   );
 }

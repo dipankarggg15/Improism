@@ -13,6 +13,12 @@ html {
   background: var(--paper);
 }
 
+html[data-theme="dark"] {
+  --paper: #09090b;
+  --ink: #fafafa;
+  color-scheme: dark;
+}
+
 body {
   min-height: 100vh;
   margin: 0;
@@ -76,4 +82,44 @@ button {
   .admin-rich blockquote { margin: 1em 0; border-left: 3px solid #18181b; padding-left: 1em; color: #52525b; }
   .admin-rich a { text-decoration: underline; }
   .admin-rich:empty::before { content: attr(data-placeholder); color: #a1a1aa; }
+}
+
+html[data-theme="dark"] .bg-white,
+html[data-theme="dark"] .bg-white\/95 {
+  background-color: #09090b !important;
+}
+
+html[data-theme="dark"] .bg-zinc-50,
+html[data-theme="dark"] .bg-zinc-100 {
+  background-color: #18181b !important;
+}
+
+html[data-theme="dark"] .bg-zinc-200,
+html[data-theme="dark"] .bg-zinc-300 {
+  background-color: #27272a !important;
+}
+
+html[data-theme="dark"] .text-black,
+html[data-theme="dark"] .text-zinc-900,
+html[data-theme="dark"] .text-zinc-800,
+html[data-theme="dark"] .text-zinc-700 {
+  color: #fafafa !important;
+}
+
+html[data-theme="dark"] .text-zinc-600,
+html[data-theme="dark"] .text-zinc-500 {
+  color: #a1a1aa !important;
+}
+
+html[data-theme="dark"] .border-zinc-100,
+html[data-theme="dark"] .border-zinc-200,
+html[data-theme="dark"] .border-zinc-300 {
+  border-color: #3f3f46 !important;
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] select {
+  background-color: #18181b;
+  color: #fafafa;
 }

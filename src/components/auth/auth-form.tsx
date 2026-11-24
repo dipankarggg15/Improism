@@ -15,7 +15,7 @@ type Mode = "login" | "signup" | "forgot" | "update";
 
 const initialState: AuthState = {};
 
-export function AuthForm({ mode, next = "/", initialError }: { mode: Mode; next?: string; initialError?: string }) {
+export function AuthForm({ mode, next = "/", initialError, initialSuccess }: { mode: Mode; next?: string; initialError?: string; initialSuccess?: string }) {
   const action = mode === "login"
     ? login
     : mode === "signup"
@@ -23,7 +23,7 @@ export function AuthForm({ mode, next = "/", initialError }: { mode: Mode; next?
       : mode === "forgot"
         ? requestPasswordReset
         : updatePassword;
-  const [state, formAction, pending] = useActionState(action, initialError ? { error: initialError } : initialState);
+  const [state, formAction, pending] = useActionState(action, initialError ? { error: initialError } : initialSuccess ? { success: initialSuccess } : initialState);
 
   const content = {
     login: {
@@ -67,7 +67,7 @@ export function AuthForm({ mode, next = "/", initialError }: { mode: Mode; next?
             A little better, a little more yourself.
           </p>
           <p className="mt-6 max-w-md text-base leading-7 text-white/55">
-            Meaningful content, thoughtful AI conversations, and personal journeys—all in one calm place.
+            Meaningful content and personal journeys, together in one calm place.
           </p>
         </div>
         <p className="text-xs text-white/35">© 2026 Improism</p>

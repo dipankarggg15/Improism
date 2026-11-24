@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  ArrowUpRight,
+  BookOpen,
   Bookmark,
   Check,
   ChevronRight,
@@ -9,10 +9,8 @@ import {
   Compass,
   Home,
   Leaf,
-  MessageCircleMore,
   Plus,
   Route,
-  Share2,
   Sparkles,
   Target,
   UserRound,
@@ -23,9 +21,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useImproism } from "@/components/improism-provider";
 import { useJourneys } from "@/components/journeys/journeys-provider";
-import { conversations, subjects as availableSubjects, type PostTheme } from "@/lib/mock-data";
+import type { PostTheme } from "@/lib/mock-data";
+import type { PublicSubject } from "@/components/improism-provider";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { ShareButton } from "@/components/share-button";
+import { BookmarkButton } from "@/components/bookmark-button";
 
 type FeedPost = {
   id: string;
@@ -61,6 +62,34 @@ type FeedRpcRow = {
   category_position: number;
   feed_position: number;
 };
+
+type PublishedArticle = {
+  id: string;
+  postId: string;
+  slug: string;
+  subject: string;
+  title: string;
+  excerpt: string;
+  imageUrl: string | null;
+  readingMinutes: number;
+  publishedAt: string;
+};
+
+type ArticleRpcRow = {
+  id: string;
+  reading_minutes: number;
+  posts: {
+    id: string;
+    slug: string;
+    title: string;
+    excerpt: string;
+    image_url: string | null;
+    published_at: string;
+    subjects: { name: string } | null;
+  } | null;
+};
+
+type HomePanel = "posts" | "articles";
 
 const themes: PostTheme[] = ["forest", "clay", "night", "lemon", "sky", "lilac"];
 
@@ -223,6 +252,42 @@ function SubjectFilters({
   );
 }
 
+function ContentTabs({
+  selected,
+  onSelect,
+}: {
+  selected: HomePanel;
+  onSelect: (panel: HomePanel) => void;
+}) {
+  return (
+    <div
+      className="inline-flex rounded-xl bg-zinc-100 p-1"
+      role="tablist"
+      aria-label="Home content"
+    >
+      {([
+        { id: "posts", label: "Posts" },
+        { id: "articles", label: "Articles" },
+      ] as const).map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={selected === tab.id}
+          onClick={() => onSelect(tab.id)}
+          className={`rounded-lg px-5 py-2 text-sm font-semibold transition-colors ${
+            selected === tab.id
+              ? "bg-black text-white shadow-sm"
+              : "text-zinc-500 hover:text-black"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function PostVisual({ post }: { post: FeedPost }) {
   if (post.imageUrl) {
     return (
@@ -264,14 +329,10 @@ function PostCard({
   post,
   saved,
   onSave,
-  onDiscuss,
-  onPlaceholder,
 }: {
   post: FeedPost;
   saved: boolean;
   onSave: (id: string) => void;
-  onDiscuss: (id: string) => void;
-  onPlaceholder: (label: string) => void;
 }) {
   return (
     <article className="overflow-hidden rounded-[1.45rem] border border-zinc-200 bg-white shadow-[0_16px_50px_rgba(0,0,0,0.06)]">
@@ -292,23 +353,14 @@ function PostCard({
       <PostVisual post={post} />
 
       <div className="px-5 pb-5 pt-5 sm:px-6 sm:pb-6">
-        <h2 className="text-[1.45rem] font-semibold leading-[1.16] tracking-[-0.035em] text-black sm:text-[1.7rem]">
-          {post.title}
-        </h2>
+        <Link href={`/posts/${post.id}`} className="block hover:underline">
+          <h2 className="text-[1.45rem] font-semibold leading-[1.16] tracking-[-0.035em] text-black sm:text-[1.7rem]">{post.title}</h2>
+        </Link>
         <p className="mt-3 text-[0.92rem] leading-6 text-zinc-600 sm:text-[0.97rem]">
           {post.excerpt}
         </p>
 
-        <div className="mt-5 flex items-center justify-between border-t border-zinc-200 pt-4">
-          <button
-            type="button"
-            onClick={() => onDiscuss(post.id)}
-            className="flex items-center gap-2 rounded-full bg-black px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-zinc-800 sm:text-sm"
-          >
-            <MessageCircleMore className="size-4" aria-hidden="true" />
-            Discuss with AI
-          </button>
-
+        <div className="mt-5 flex items-center justify-end border-t border-zinc-200 pt-4">
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -327,15 +379,7 @@ function PostCard({
                 aria-hidden="true"
               />
             </button>
-            <button
-              type="button"
-              onClick={() => onPlaceholder("Sharing")}
-              className="grid size-9 place-items-center rounded-full text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-black"
-              aria-label="Share post"
-              title="Share"
-            >
-              <Share2 className="size-[1.1rem]" aria-hidden="true" />
-            </button>
+            <ShareButton path={`/posts/${post.id}`} title={post.title} compact />
           </div>
         </div>
       </div>
@@ -343,47 +387,58 @@ function PostCard({
   );
 }
 
-function DiscussionPreview({ compact = false }: { compact?: boolean }) {
+function ArticleCard({ article }: { article: PublishedArticle }) {
+  const published = new Intl.DateTimeFormat("en", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(article.publishedAt));
+
   return (
-    <section
-      className={`rounded-[1.35rem] border border-black bg-black text-white shadow-[0_16px_45px_rgba(0,0,0,0.12)] ${
-        compact ? "p-5" : "p-5 sm:p-6"
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="grid size-8 place-items-center rounded-full bg-white/10">
-            <Sparkles className="size-4 text-white" aria-hidden="true" />
-          </span>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.13em] text-zinc-400">
-              Continue thinking
-            </p>
-            <p className="mt-0.5 text-sm font-medium">Recent AI discussions</p>
+    <article className="overflow-hidden rounded-[1.45rem] border border-zinc-200 bg-white shadow-[0_16px_50px_rgba(0,0,0,0.06)]">
+      {article.imageUrl ? (
+        <div
+          className="aspect-[16/9] bg-zinc-100 bg-cover bg-center"
+          style={{ backgroundImage: `url(${JSON.stringify(article.imageUrl)})` }}
+          role="img"
+          aria-label={`Cover image for ${article.title}`}
+        />
+      ) : (
+        <div className="relative grid aspect-[16/8] place-items-center overflow-hidden bg-black text-white">
+          <div className="absolute -right-16 -top-20 size-56 rounded-full border border-white/25" />
+          <div className="absolute -bottom-20 -left-12 size-48 rounded-full border border-white/15" />
+          <BookOpen className="size-10" strokeWidth={1.35} aria-hidden="true" />
+        </div>
+      )}
+
+      <div className="p-5 sm:p-6">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.68rem] font-semibold uppercase tracking-[0.13em] text-zinc-500">
+          <span>{article.subject}</span>
+          <span aria-hidden="true">·</span>
+          <span>{article.readingMinutes} min read</span>
+          <span aria-hidden="true">·</span>
+          <span>{published}</span>
+        </div>
+        <h2 className="mt-3 text-[1.6rem] font-semibold leading-[1.12] tracking-[-0.04em] text-black sm:text-[1.9rem]">
+          {article.title}
+        </h2>
+        {article.excerpt && (
+          <p className="mt-3 text-[0.94rem] leading-6 text-zinc-600">
+            {article.excerpt}
+          </p>
+        )}
+
+        <div className="mt-5 flex items-center justify-between border-t border-zinc-200 pt-4">
+          <Link href={`/articles/${article.slug}`} className="inline-flex items-center gap-2 text-sm font-semibold hover:underline">
+            <BookOpen className="size-4" aria-hidden="true" /> Read article
+          </Link>
+          <div className="flex items-center gap-1">
+            <BookmarkButton id={article.postId} title={article.title} subject={article.subject} readTime={`${article.readingMinutes} min read`} compact />
+            <ShareButton path={`/articles/${article.slug}`} title={article.title} compact />
           </div>
         </div>
-        <ArrowUpRight className="size-4 text-white/55" aria-hidden="true" />
       </div>
-
-      <div className="mt-4 space-y-2.5">
-        {conversations.slice(0, 2).map((conversation) => (
-          <Link
-            key={conversation.id}
-            href={`/ai?conversation=${conversation.id}`}
-            className="flex w-full items-center justify-between rounded-xl bg-white/[0.07] px-3.5 py-3 text-left transition-colors hover:bg-white/[0.11]"
-          >
-            <span>
-              <span className="block text-sm font-medium leading-5">{conversation.title}</span>
-              <span className="mt-0.5 block text-[0.68rem] text-white/45">
-                {conversation.messages.length} messages · {conversation.time}
-              </span>
-            </span>
-            <ChevronRight className="size-4 shrink-0 text-white/35" aria-hidden="true" />
-          </Link>
-        ))}
-      </div>
-      <p className="mt-3 text-[0.68rem] text-white/40">Continue in Improism AI</p>
-    </section>
+    </article>
   );
 }
 
@@ -439,13 +494,15 @@ function JourneyPreview() {
 }
 
 function DiscoverSubjects({
+  subjects,
   selectedSubjects,
   onAdd,
 }: {
+  subjects: PublicSubject[];
   selectedSubjects: string[];
   onAdd: (subject: string) => void;
 }) {
-  const discoverable = availableSubjects
+  const discoverable = subjects
     .filter((subject) => !selectedSubjects.includes(subject.name))
     .slice(0, 3);
 
@@ -576,14 +633,36 @@ function FeedLoading() {
   );
 }
 
+function ArticlesLoading() {
+  return (
+    <div className="space-y-5" aria-label="Loading articles" aria-live="polite">
+      {[0, 1].map((item) => (
+        <div key={item} className="overflow-hidden rounded-[1.45rem] border border-zinc-200 bg-white">
+          <div className="aspect-[16/8] animate-pulse bg-zinc-200" />
+          <div className="space-y-3 p-6">
+            <div className="h-3 w-1/3 animate-pulse rounded bg-zinc-100" />
+            <div className="h-7 w-3/4 animate-pulse rounded bg-zinc-200" />
+            <div className="h-4 w-full animate-pulse rounded bg-zinc-100" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function HomeFeed() {
   const router = useRouter();
-  const { selectedSubjects, savedPostIds, toggleSavedPost, toggleSubject } = useImproism();
+  const { subjects, ready, selectedSubjects, savedPostIds, toggleSavedPost, toggleSubject } = useImproism();
   const [selectedSubject, setSelectedSubject] = useState("For You");
+  const [activePanel, setActivePanel] = useState<HomePanel>("posts");
   const [notice, setNotice] = useState("");
   const [feedPosts, setFeedPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [feedError, setFeedError] = useState("");
+  const [articles, setArticles] = useState<PublishedArticle[]>([]);
+  const [articlesLoading, setArticlesLoading] = useState(false);
+  const [articlesLoaded, setArticlesLoaded] = useState(false);
+  const [articlesError, setArticlesError] = useState("");
   const subjectFilters = ["For You", ...selectedSubjects];
   const selectedSubjectsKey = selectedSubjects.join("|");
   const activeSubject = selectedSubject === "For You" || selectedSubjects.includes(selectedSubject)
@@ -604,6 +683,13 @@ export function HomeFeed() {
     [activeSubject, feedPosts],
   );
 
+  const filteredArticles = useMemo(
+    () => activeSubject === "For You"
+      ? articles.filter((article) => selectedSubjects.includes(article.subject))
+      : articles.filter((article) => article.subject === activeSubject),
+    [activeSubject, articles, selectedSubjects],
+  );
+
   const loadFeed = useCallback(async () => {
     if (!isSupabaseConfigured()) {
       setFeedError("Supabase is not configured for this environment.");
@@ -621,6 +707,47 @@ export function HomeFeed() {
     }
     setFeedPosts(((data ?? []) as FeedRpcRow[]).map(toFeedPost));
     setLoading(false);
+  }, []);
+
+  const loadArticles = useCallback(async () => {
+    if (!isSupabaseConfigured()) {
+      setArticlesError("Supabase is not configured for this environment.");
+      setArticlesLoaded(true);
+      setArticlesLoading(false);
+      return;
+    }
+
+    setArticlesLoading(true);
+    setArticlesError("");
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("articles")
+      .select("id, reading_minutes, posts!inner(id, slug, title, excerpt, image_url, published_at, status, subjects(name))")
+      .eq("posts.status", "published")
+      .lte("posts.published_at", new Date().toISOString())
+      .order("published_at", { referencedTable: "posts", ascending: false });
+
+    if (error) {
+      setArticlesError(error.message || "Could not load published articles.");
+      setArticlesLoaded(true);
+      setArticlesLoading(false);
+      return;
+    }
+
+    const rows = (data ?? []) as unknown as ArticleRpcRow[];
+    setArticles(rows.flatMap((row) => row.posts ? [{
+      id: row.id,
+      postId: row.posts.id,
+      slug: row.posts.slug,
+      subject: row.posts.subjects?.name ?? "Unassigned",
+      title: row.posts.title,
+      excerpt: row.posts.excerpt,
+      imageUrl: row.posts.image_url,
+      readingMinutes: row.reading_minutes,
+      publishedAt: row.posts.published_at,
+    }] : []));
+    setArticlesLoaded(true);
+    setArticlesLoading(false);
   }, []);
 
   useEffect(() => {
@@ -667,8 +794,11 @@ export function HomeFeed() {
     }
   }
 
-  function showPlaceholder(label: string) {
-    setNotice(`${label} is a prototype preview for now.`);
+  function selectPanel(panel: HomePanel) {
+    setActivePanel(panel);
+    if (panel === "articles" && !articlesLoaded && !articlesLoading) {
+      void loadArticles();
+    }
   }
 
   async function addSubject(subject: string) {
@@ -702,7 +832,6 @@ export function HomeFeed() {
       router.push("/profile");
       return;
     }
-    showPlaceholder(label);
   }
 
   return (
@@ -728,11 +857,32 @@ export function HomeFeed() {
             <Navigation onPlaceholder={navigateFromHome} />
           </div>
           <div className="mt-auto">
-            <DailyAllowance
-              selectedSubject={activeSubject}
-              subjectCount={selectedSubjects.length}
-              current={filteredPosts.length}
-            />
+            {activePanel === "posts" ? (
+              <DailyAllowance
+                selectedSubject={activeSubject}
+                subjectCount={selectedSubjects.length}
+                current={filteredPosts.length}
+              />
+            ) : (
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-[0_10px_30px_rgba(0,0,0,0.04)]">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                      Article library
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-900">
+                      {filteredArticles.length} available
+                    </p>
+                  </div>
+                  <span className="grid size-8 place-items-center rounded-full bg-zinc-100 text-black">
+                    <BookOpen className="size-4" aria-hidden="true" />
+                  </span>
+                </div>
+                <p className="mt-2.5 text-[0.72rem] leading-5 text-zinc-500">
+                  From the subjects you follow
+                </p>
+              </div>
+            )}
             <p className="mt-4 px-2 text-[0.67rem] leading-5 text-zinc-400">
               A little better, a little more yourself.
             </p>
@@ -744,23 +894,39 @@ export function HomeFeed() {
             <div className="flex items-end justify-between gap-5">
               <div>
                 <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                  Your daily perspective
+                  {activePanel === "posts" ? "Your daily perspective" : "Your reading library"}
                 </p>
                 <h1 className="mt-2 max-w-lg text-[2rem] font-semibold leading-[1.03] tracking-[-0.055em] sm:text-[2.55rem]">
-                  Ideas worth carrying into your day.
+                  {activePanel === "posts"
+                    ? "Ideas worth carrying into your day."
+                    : "Longer ideas, explored with care."}
                 </h1>
               </div>
               <div className="hidden rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-500 sm:block">
-                {displayedDate}
+                {activePanel === "posts" ? displayedDate : `${filteredArticles.length} articles`}
               </div>
             </div>
 
+            <div className="mt-5">
+              <ContentTabs selected={activePanel} onSelect={selectPanel} />
+            </div>
+
             <div className="mt-5 md:hidden">
-              <DailyAllowance
-                selectedSubject={activeSubject}
-                subjectCount={selectedSubjects.length}
-                current={filteredPosts.length}
-              />
+              {activePanel === "posts" ? (
+                <DailyAllowance
+                  selectedSubject={activeSubject}
+                  subjectCount={selectedSubjects.length}
+                  current={filteredPosts.length}
+                />
+              ) : (
+                <div className="flex items-center justify-between rounded-2xl border border-zinc-200 bg-white p-4">
+                  <div>
+                    <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-zinc-500">Article library</p>
+                    <p className="mt-1 text-sm font-semibold">{filteredArticles.length} from your subjects</p>
+                  </div>
+                  <BookOpen className="size-5 text-zinc-500" aria-hidden="true" />
+                </div>
+              )}
             </div>
           </div>
 
@@ -768,10 +934,32 @@ export function HomeFeed() {
             <SubjectFilters subjects={subjectFilters} selected={activeSubject} onSelect={setSelectedSubject} />
           </div>
 
-          <div className="space-y-5 px-4 pt-5 sm:px-6 lg:px-7">
-            {loading && <FeedLoading />}
+          {ready && selectedSubjects.length === 0 && (
+            <section className="mx-4 mt-5 rounded-[1.4rem] border border-black bg-black p-5 text-white sm:mx-6 sm:p-6 lg:mx-7">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-white/50">Set up your feed</p>
+              <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em]">Choose at least one subject to begin.</h2>
+              <p className="mt-2 text-sm leading-6 text-white/65">
+                Your choices control which Posts and Articles appear. You can change them anytime in Profile.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {subjects.map((subject) => (
+                  <button
+                    key={subject.id}
+                    type="button"
+                    onClick={() => void addSubject(subject.name)}
+                    className="rounded-full border border-white/25 px-3.5 py-2 text-xs font-semibold text-white hover:bg-white hover:text-black"
+                  >
+                    + {subject.name}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
 
-            {!loading && feedError && (
+          <div className="space-y-5 px-4 pt-5 sm:px-6 lg:px-7">
+            {activePanel === "posts" && loading && <FeedLoading />}
+
+            {activePanel === "posts" && !loading && feedError && (
               <div className="rounded-[1.35rem] border border-red-200 bg-red-50 px-6 py-8 text-center">
                 <h2 className="text-base font-semibold">Your feed could not be loaded</h2>
                 <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-red-700">{feedError}</p>
@@ -785,37 +973,30 @@ export function HomeFeed() {
               </div>
             )}
 
-            {filteredPosts.map((post, index) => (
+            {activePanel === "posts" && filteredPosts.map((post, index) => (
               <div key={post.id} className="space-y-5">
                 <ViewTrackedPost post={post} onViewed={markViewed}>
                   <PostCard
                     post={post}
                     saved={savedPostIds.includes(post.id)}
                     onSave={(postId) => void toggleSaved(postId)}
-                    onDiscuss={(postId) => router.push(`/ai?post=${postId}`)}
-                    onPlaceholder={showPlaceholder}
                   />
                 </ViewTrackedPost>
 
                 {index === 0 && (
                   <div className="lg:hidden">
-                    <DiscussionPreview />
+                    <JourneyPreview />
                   </div>
                 )}
                 {index === 1 && (
                   <div className="lg:hidden">
-                    <JourneyPreview />
-                  </div>
-                )}
-                {index === 2 && (
-                  <div className="lg:hidden">
-                    <DiscoverSubjects selectedSubjects={selectedSubjects} onAdd={addSubject} />
+                    <DiscoverSubjects subjects={subjects} selectedSubjects={selectedSubjects} onAdd={addSubject} />
                   </div>
                 )}
               </div>
             ))}
 
-            {!loading && !feedError && (
+            {activePanel === "posts" && !loading && !feedError && (
             <div className="rounded-[1.35rem] border border-dashed border-zinc-300 px-6 py-10 text-center">
               <span className="mx-auto grid size-10 place-items-center rounded-full bg-zinc-100 text-black">
                 <Leaf className="size-4.5" aria-hidden="true" />
@@ -832,6 +1013,50 @@ export function HomeFeed() {
               </p>
             </div>
             )}
+
+            {activePanel === "articles" && articlesLoading && <ArticlesLoading />}
+
+            {activePanel === "articles" && !articlesLoading && articlesError && (
+              <div className="rounded-[1.35rem] border border-red-200 bg-red-50 px-6 py-8 text-center">
+                <h2 className="text-base font-semibold">Articles could not be loaded</h2>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-red-700">{articlesError}</p>
+                <button
+                  type="button"
+                  onClick={() => void loadArticles()}
+                  className="mt-4 rounded-full bg-black px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {activePanel === "articles" && !articlesLoading && !articlesError && filteredArticles.map((article, index) => (
+              <div key={article.id} className="space-y-5">
+                <ArticleCard article={article} />
+                {index === 0 && (
+                  <div className="lg:hidden">
+                    <JourneyPreview />
+                  </div>
+                )}
+                {index === 1 && (
+                  <div className="lg:hidden">
+                    <DiscoverSubjects subjects={subjects} selectedSubjects={selectedSubjects} onAdd={addSubject} />
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {activePanel === "articles" && articlesLoaded && !articlesLoading && !articlesError && filteredArticles.length === 0 && (
+              <div className="rounded-[1.35rem] border border-dashed border-zinc-300 px-6 py-10 text-center">
+                <span className="mx-auto grid size-10 place-items-center rounded-full bg-zinc-100 text-black">
+                  <BookOpen className="size-4.5" aria-hidden="true" />
+                </span>
+                <h2 className="mt-3 text-base font-semibold">No articles in your subjects yet</h2>
+                <p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-zinc-500">
+                  Published articles from the subjects you follow will appear here.
+                </p>
+              </div>
+            )}
           </div>
         </main>
 
@@ -845,17 +1070,17 @@ export function HomeFeed() {
             </div>
           </div>
           <div className="mt-5 space-y-4">
-            <DiscussionPreview compact />
             <JourneyPreview />
             <DiscoverSubjects
+              subjects={subjects}
               selectedSubjects={selectedSubjects}
               onAdd={(subject) => void addSubject(subject)}
             />
           </div>
           <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 px-1 text-[0.66rem] text-zinc-400">
-            <button type="button" onClick={() => showPlaceholder("About")}>About</button>
-            <button type="button" onClick={() => showPlaceholder("Privacy")}>Privacy</button>
-            <button type="button" onClick={() => showPlaceholder("Feedback")}>Feedback</button>
+            <Link href="/about">About</Link>
+            <Link href="/privacy">Privacy</Link>
+            <Link href="/feedback">Feedback</Link>
             <span>© 2026 Improism</span>
           </div>
         </aside>

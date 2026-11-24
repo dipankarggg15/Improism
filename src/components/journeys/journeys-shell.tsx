@@ -1,8 +1,8 @@
 "use client";
 
-import { Home, Leaf, Route, Sparkles, UserRound, X } from "lucide-react";
+import { Home, Leaf, Route, Sparkles, UserRound } from "lucide-react";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 const navItems = [
   { label: "Home", icon: Home, href: "/" },
@@ -23,8 +23,6 @@ function Brand() {
 }
 
 export function JourneysShell({ children }: { children: ReactNode }) {
-  const [notice, setNotice] = useState("");
-
   return (
     <div className="h-dvh overflow-hidden bg-white text-black md:grid md:grid-cols-[190px_minmax(0,1fr)]">
       <aside className="hidden h-dvh flex-col border-r border-zinc-200 px-5 py-7 md:flex">
@@ -38,27 +36,9 @@ export function JourneysShell({ children }: { children: ReactNode }) {
                 : "text-zinc-600 hover:bg-zinc-100 hover:text-black"
             }`;
 
-            return item.href ? (
-              <Link
-                key={item.label}
-                href={item.href}
-                className={classes}
-                aria-current={item.active ? "page" : undefined}
-              >
-                <Icon className="size-5" strokeWidth={1.9} aria-hidden="true" />
-                {item.label}
-              </Link>
-            ) : (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => setNotice(`${item.label} is a prototype preview for now.`)}
-                className={classes}
-              >
-                <Icon className="size-5" strokeWidth={1.9} aria-hidden="true" />
-                {item.label}
-              </button>
-            );
+            return <Link key={item.label} href={item.href} className={classes} aria-current={item.active ? "page" : undefined}>
+              <Icon className="size-5" strokeWidth={1.9} aria-hidden="true" />{item.label}
+            </Link>;
           })}
         </nav>
         <div className="mt-auto rounded-2xl border border-zinc-200 p-4">
@@ -90,45 +70,10 @@ export function JourneysShell({ children }: { children: ReactNode }) {
               </>
             );
 
-            return item.href ? (
-              <Link
-                key={item.label}
-                href={item.href}
-                className={classes}
-                aria-current={item.active ? "page" : undefined}
-              >
-                {content}
-              </Link>
-            ) : (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => setNotice(`${item.label} is a prototype preview for now.`)}
-                className={classes}
-              >
-                {content}
-              </button>
-            );
+            return <Link key={item.label} href={item.href} className={classes} aria-current={item.active ? "page" : undefined}>{content}</Link>;
           })}
         </div>
       </nav>
-
-      {notice && (
-        <div
-          className="fixed inset-x-4 bottom-24 z-50 mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl bg-black px-4 py-3 text-sm text-white shadow-2xl md:bottom-6"
-          role="status"
-        >
-          <span>{notice}</span>
-          <button
-            type="button"
-            onClick={() => setNotice("")}
-            className="grid size-7 place-items-center rounded-full text-white/60 hover:bg-white/10 hover:text-white"
-            aria-label="Dismiss message"
-          >
-            <X className="size-4" aria-hidden="true" />
-          </button>
-        </div>
-      )}
     </div>
   );
 }

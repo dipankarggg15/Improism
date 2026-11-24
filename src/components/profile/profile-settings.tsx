@@ -12,7 +12,6 @@ import {
   Leaf,
   LockKeyhole,
   LogOut,
-  MessageCircleMore,
   Monitor,
   Moon,
   Plus,
@@ -29,8 +28,7 @@ import Link from "next/link";
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useImproism } from "@/components/improism-provider";
 import { useJourneys } from "@/components/journeys/journeys-provider";
-import { conversations, subjects as allSubjects } from "@/lib/mock-data";
-import { logout } from "@/app/auth/actions";
+import { deleteAccount, logout } from "@/app/auth/actions";
 
 const navItems = [
   { label: "Home", icon: Home, href: "/" },
@@ -135,17 +133,20 @@ export function ProfileSettings() {
   const {
     displayName,
     bio,
+    subjects,
     selectedSubjects,
     savedPosts,
     theme,
     timezone,
     notifications,
+    personalizationEnabled,
     toggleSubject,
     toggleSavedPost,
     updateProfile,
     setTheme,
     setTimezone,
     toggleNotification,
+    setPersonalizationEnabled,
     accountEmail,
     accountCreatedAt,
   } = useImproism();
@@ -206,10 +207,6 @@ export function ProfileSettings() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not update your subjects.");
     }
-  }
-
-  function placeholder(message: string) {
-    setNotice(`${message} will be available when accounts are connected.`);
   }
 
   return (
@@ -335,7 +332,7 @@ export function ProfileSettings() {
                 }
               >
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {allSubjects.map((subject) => {
+                  {subjects.map((subject) => {
                     const followed = selectedSubjects.includes(subject.name);
                     return (
                       <div key={subject.name} className="flex min-h-32 flex-col rounded-2xl border border-zinc-200 p-4">
@@ -379,10 +376,10 @@ export function ProfileSettings() {
                         <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-black text-white">
                           <Bookmark className="size-4.5 fill-current" aria-hidden="true" />
                         </span>
-                        <div className="min-w-0 flex-1">
+                        <Link href={`/posts/${post.id}`} className="min-w-0 flex-1 hover:underline">
                           <p className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-zinc-500">{post.subject} · {post.readTime}</p>
                           <h3 className="mt-1 text-sm font-semibold leading-5">{post.title}</h3>
-                        </div>
+                        </Link>
                         <button
                           type="button"
                           onClick={() => void removeSavedPost(String(post.id))}
@@ -407,16 +404,6 @@ export function ProfileSettings() {
             <div className="space-y-6">
               <Section title="My activity" description="A quiet snapshot of where you have been thinking and growing.">
                 <div className="space-y-3">
-                  <Link href={`/ai?conversation=${conversations[0]?.id ?? "ambition"}`} className="group flex items-center gap-3 rounded-2xl bg-zinc-50 p-4 hover:bg-zinc-100">
-                    <span className="grid size-10 shrink-0 place-items-center rounded-full bg-black text-white">
-                      <MessageCircleMore className="size-4" aria-hidden="true" />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold text-zinc-500">{conversations.length} recent AI conversations</p>
-                      <p className="mt-0.5 truncate text-sm font-semibold">{conversations[0]?.title}</p>
-                    </div>
-                    <ChevronRight className="size-4 text-zinc-400 group-hover:text-black" aria-hidden="true" />
-                  </Link>
                   <Link href={activeJourneys[0] ? `/journeys/${activeJourneys[0].id}` : "/journeys/new"} className="group flex items-center gap-3 rounded-2xl bg-zinc-50 p-4 hover:bg-zinc-100">
                     <span className="grid size-10 shrink-0 place-items-center rounded-full border border-zinc-300 bg-white">
                       <Route className="size-4" aria-hidden="true" />
@@ -430,7 +417,7 @@ export function ProfileSettings() {
                 </div>
               </Section>
 
-              <Section title="Preferences" description="Feed preferences sync securely across your devices.">
+              <Section title="Preferences" description="Theme and content preferences sync securely across your devices.">
                 <div>
                   <p className="text-xs font-semibold text-zinc-500">Theme</p>
                   <div className="mt-2 grid grid-cols-3 gap-2 rounded-xl bg-zinc-100 p-1">
@@ -475,10 +462,10 @@ export function ProfileSettings() {
                   </span>
                 </label>
                 <div className="mt-5 border-t border-zinc-200 pt-2">
-                  {[
-                    { key: "daily" as const, label: "Daily feed", detail: "A gentle reminder when fresh posts arrive." },
-                    { key: "journeys" as const, label: "Journey reminders", detail: "Reminders for activities you planned." },
-                    { key: "reflections" as const, label: "Reflection prompts", detail: "Occasional questions worth sitting with." },
+                    {[
+                    { key: "daily" as const, label: "Daily feed updates", detail: "Save your preference for future feed notifications." },
+                    { key: "journeys" as const, label: "Journey reminders", detail: "Save your preference for future journey reminders." },
+                    { key: "reflections" as const, label: "Reflection prompts", detail: "Save your preference for future reflection prompts." },
                   ].map((item) => (
                     <div key={item.key} className="flex items-center gap-4 py-3">
                       <Bell className="size-4 shrink-0 text-zinc-400" aria-hidden="true" />
@@ -512,20 +499,20 @@ export function ProfileSettings() {
                 <SettingRow
                   icon={ShieldCheck}
                   title="Privacy"
-                  detail="Control how future personalization uses your activity."
-                  action={<button type="button" onClick={() => placeholder("Privacy controls")} className="grid size-9 place-items-center rounded-full hover:bg-zinc-100" aria-label="Open privacy controls"><ChevronRight className="size-4" aria-hidden="true" /></button>}
+                  detail="Allow your subject choices and reading state to personalize your feed."
+                  action={<Toggle checked={personalizationEnabled} onChange={() => void setPersonalizationEnabled(!personalizationEnabled)} label="Toggle personalization" />}
                 />
                 <SettingRow
                   icon={Download}
                   title="Download your data"
-                  detail="Export a copy of your future account data."
-                  action={<button type="button" onClick={() => placeholder("Data export")} className="grid size-9 place-items-center rounded-full hover:bg-zinc-100" aria-label="Download your data"><ChevronRight className="size-4" aria-hidden="true" /></button>}
+                  detail="Export a JSON copy of your profile, preferences, saved content, feed state, and Journeys."
+                  action={<a href="/api/account/export" download className="grid size-9 place-items-center rounded-full hover:bg-zinc-100" aria-label="Download your data"><Download className="size-4" aria-hidden="true" /></a>}
                 />
                 <SettingRow
                   icon={Trash2}
                   title="Delete account"
-                  detail="This prototype will never delete anything."
-                  action={<button type="button" onClick={() => placeholder("Account deletion")} className="rounded-full border border-zinc-300 px-3 py-1.5 text-xs font-semibold hover:border-black">Unavailable</button>}
+                  detail="Permanently delete your account and all associated personal data."
+                  action={<form action={deleteAccount} onSubmit={(event) => { if (!window.confirm("Permanently delete your Improism account and all personal data? This cannot be undone.")) event.preventDefault(); }}><button type="submit" className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">Delete</button></form>}
                 />
               </Section>
             </div>

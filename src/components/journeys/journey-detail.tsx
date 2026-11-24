@@ -5,12 +5,8 @@ import {
   BarChart3,
   CalendarDays,
   Check,
-  ChevronRight,
-  Circle,
   Clock3,
   Edit3,
-  MessageCircleMore,
-  MoreHorizontal,
   Plus,
   Route,
   Save,
@@ -512,9 +508,9 @@ function ProgressTab({ journey }: { journey: Journey }) {
   );
 }
 
-function ReviewTab({ journey }: { journey: Journey }) {
+function ReviewTab() {
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+    <div>
       <section className="overflow-hidden rounded-[1.4rem] border border-zinc-200 bg-white">
         <div className="border-b border-zinc-200 p-5 sm:p-6">
           <div className="flex items-center gap-3">
@@ -523,76 +519,27 @@ function ReviewTab({ journey }: { journey: Journey }) {
             </span>
             <div>
               <p className="font-semibold">Improism AI review</p>
-              <p className="text-xs text-zinc-400">
-                Sample guidance for {journey.title} · based on mock activity
-              </p>
             </div>
           </div>
         </div>
-        <div className="p-5 sm:p-7">
-          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.15em] text-zinc-400">
-            What seems to be working
-          </p>
-          <p className="mt-3 text-lg leading-8 tracking-[-0.02em] text-zinc-800">
-            You are most consistent when the activity has a clear beginning and can fit into an ordinary day. The smaller actions appear to be creating the stability that the larger intention needs.
-          </p>
-
-          <div className="my-7 border-t border-zinc-200" />
-
-          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.15em] text-zinc-400">
-            A pattern worth noticing
-          </p>
-          <p className="mt-3 text-sm leading-7 text-zinc-600">
-            Your reflections focus more on how the practice changes the quality of your day than on completing every activity. That is useful evidence: this journey may benefit from protecting one anchor activity and treating the others as flexible support.
-          </p>
-
-          <div className="mt-7 rounded-2xl bg-zinc-100 p-5">
-            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.15em] text-zinc-400">
-              Gentle experiment for next week
-            </p>
-            <p className="mt-2 text-sm font-medium leading-6">
-              Choose the activity that most changes the tone of your day. Make it the only “essential” one for seven days, and notice whether the others happen more naturally.
-            </p>
-          </div>
+        <div className="grid min-h-96 place-items-center px-6 py-12 text-center">
+          <h2 className="text-4xl font-semibold tracking-[-0.05em] sm:text-5xl">
+            Under development
+          </h2>
         </div>
       </section>
-
-      <aside className="space-y-4">
-        <section className="rounded-[1.4rem] bg-black p-5 text-white sm:p-6">
-          <MessageCircleMore className="size-5" aria-hidden="true" />
-          <h2 className="mt-5 text-xl font-semibold tracking-[-0.03em]">Discuss this journey</h2>
-          <p className="mt-2 text-sm leading-6 text-white/55">
-            Ask questions, challenge the review, or think through what to change next.
-          </p>
-          <Link
-            href={`/ai?journey=${journey.id}`}
-            className="mt-5 flex w-full items-center justify-between rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black"
-          >
-            Discuss with AI
-            <ChevronRight className="size-4" aria-hidden="true" />
-          </Link>
-        </section>
-        <section className="rounded-[1.4rem] border border-zinc-200 p-5">
-          <p className="text-[0.66rem] font-semibold uppercase tracking-[0.15em] text-zinc-400">Future review inputs</p>
-          <ul className="mt-4 space-y-3 text-sm text-zinc-600">
-            {["Activity history", "Your reflections", "Changes to the plan", "Conversation context"].map((item) => (
-              <li key={item} className="flex items-center gap-2">
-                <Circle className="size-2" fill="currentColor" aria-hidden="true" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </section>
-      </aside>
-
     </div>
   );
 }
 
 export function JourneyDetail({ journeyId }: { journeyId: string }) {
-  const { journeys } = useJourneys();
+  const { journeys, loading, error, setJourneyStatus, deleteJourney } = useJourneys();
   const [activeTab, setActiveTab] = useState<DetailTab>("plan");
   const journey = journeys.find((item) => item.id === journeyId);
+
+  if (loading) {
+    return <div className="mx-auto max-w-5xl animate-pulse px-4 py-8 sm:px-6"><div className="h-4 w-32 rounded bg-zinc-100" /><div className="mt-8 h-28 rounded-3xl bg-zinc-100" /><div className="mt-6 h-80 rounded-3xl bg-zinc-100" /></div>;
+  }
 
   if (!journey) {
     return (
@@ -600,7 +547,7 @@ export function JourneyDetail({ journeyId }: { journeyId: string }) {
         <div>
           <Route className="mx-auto size-8 text-zinc-300" aria-hidden="true" />
           <h1 className="mt-4 text-2xl font-semibold">Journey not found</h1>
-          <p className="mt-2 text-sm text-zinc-500">This prototype journey may have reset after a refresh.</p>
+          <p className="mt-2 text-sm text-zinc-500">{error || "This journey does not exist or you no longer have access to it."}</p>
           <Link href="/journeys" className="mt-5 inline-flex rounded-full bg-black px-4 py-2.5 text-sm font-semibold text-white">
             Return to journeys
           </Link>
@@ -627,8 +574,11 @@ export function JourneyDetail({ journeyId }: { journeyId: string }) {
         <div className="flex items-center gap-2 text-xs text-zinc-400">
           <Clock3 className="size-3.5" aria-hidden="true" />
           Updated today
-          <button type="button" className="grid size-8 place-items-center rounded-full hover:bg-zinc-100" aria-label="More journey options">
-            <MoreHorizontal className="size-4" aria-hidden="true" />
+          <button type="button" onClick={() => setJourneyStatus(journey.id, journey.status === "active" ? "paused" : "active")} className="rounded-full border border-zinc-300 px-3 py-1.5 font-semibold text-zinc-600 hover:border-black hover:text-black">
+            {journey.status === "active" ? "Pause" : "Resume"}
+          </button>
+          <button type="button" onClick={() => { if (window.confirm("Delete this journey and all of its activity and reflections?")) deleteJourney(journey.id); }} className="rounded-full border border-red-200 px-3 py-1.5 font-semibold text-red-700 hover:bg-red-50">
+            Delete
           </button>
         </div>
       </header>
@@ -659,7 +609,7 @@ export function JourneyDetail({ journeyId }: { journeyId: string }) {
       <div className="mt-6">
         {activeTab === "plan" && <PlanTab journey={journey} />}
         {activeTab === "progress" && <ProgressTab journey={journey} />}
-        {activeTab === "review" && <ReviewTab journey={journey} />}
+        {activeTab === "review" && <ReviewTab />}
       </div>
     </div>
   );

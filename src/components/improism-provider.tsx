@@ -10,6 +10,13 @@ type Notifications = {
   reflections: boolean;
 };
 
+export type PublicSubject = {
+  id: string;
+  name: string;
+  description: string;
+  imageUrl: string | null;
+};
+
 export type SavedPostSummary = {
   id: string;
   subject: string;
@@ -18,6 +25,8 @@ export type SavedPostSummary = {
 };
 
 type ImproismState = {
+  subjects: PublicSubject[];
+  ready: boolean;
   selectedSubjects: string[];
   savedPostIds: string[];
   savedPosts: SavedPostSummary[];
@@ -26,12 +35,15 @@ type ImproismState = {
   theme: string;
   timezone: string;
   notifications: Notifications;
+  personalizationEnabled: boolean;
   accountEmail?: string;
   accountCreatedAt?: string;
 };
 
 const initialState: ImproismState = {
-  selectedSubjects: ["Personal Growth", "Philosophy", "Business", "Health", "Relationships"],
+  subjects: [],
+  ready: false,
+  selectedSubjects: [],
   savedPostIds: [],
   savedPosts: [],
   displayName: "Dipankar Ghosh",
@@ -39,6 +51,7 @@ const initialState: ImproismState = {
   theme: "System",
   timezone: "Asia/Kolkata",
   notifications: { daily: true, journeys: true, reflections: false },
+  personalizationEnabled: true,
 };
 
 const storageKey = "improism-prototype-state-v1";
@@ -86,6 +99,7 @@ type ImproismContextValue = ImproismState & {
   setTheme: (theme: string) => void;
   setTimezone: (timezone: string) => Promise<void>;
   toggleNotification: (key: keyof Notifications) => void;
+  setPersonalizationEnabled: (enabled: boolean) => Promise<void>;
 };
 
 const ImproismContext = createContext<ImproismContextValue | null>(null);
@@ -101,10 +115,11 @@ export function ImproismProvider({ children }: { children: ReactNode }) {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) return;
 
-      const [profileResult, subjectsResult, savedPostsResult] = await Promise.all([
-        supabase.from("profiles").select("display_name, bio, timezone, created_at").single(),
+      const [profileResult, subjectsResult, savedPostsResult, publicSubjectsResult] = await Promise.all([
+        supabase.from("profiles").select("display_name, bio, timezone, theme, notification_daily, notification_journeys, notification_reflections, personalization_enabled, created_at").single(),
         supabase.from("user_subjects").select("subjects(name)"),
         supabase.from("saved_posts").select("post_id, posts(title, body, excerpt, subjects(name))"),
+        supabase.from("subjects").select("id, name, description, image_url").eq("is_active", true).order("name"),
       ]);
 
       const selectedSubjects = (subjectsResult.data ?? []).flatMap((row) => {
@@ -130,9 +145,23 @@ export function ImproismProvider({ children }: { children: ReactNode }) {
 
       updateState((current) => ({
         ...current,
+        ready: true,
+        subjects: (publicSubjectsResult.data ?? []).map((subject) => ({
+          id: subject.id,
+          name: subject.name,
+          description: subject.description,
+          imageUrl: subject.image_url,
+        })),
         displayName: profileResult.data?.display_name ?? current.displayName,
         bio: profileResult.data?.bio ?? current.bio,
         timezone: profileResult.data?.timezone ?? current.timezone,
+        theme: profileResult.data?.theme ?? current.theme,
+        notifications: {
+          daily: profileResult.data?.notification_daily ?? current.notifications.daily,
+          journeys: profileResult.data?.notification_journeys ?? current.notifications.journeys,
+          reflections: profileResult.data?.notification_reflections ?? current.notifications.reflections,
+        },
+        personalizationEnabled: profileResult.data?.personalization_enabled ?? current.personalizationEnabled,
         selectedSubjects: subjectsResult.error ? current.selectedSubjects : selectedSubjects,
         savedPostIds: savedPostsResult.error
           ? current.savedPostIds
@@ -143,6 +172,18 @@ export function ImproismProvider({ children }: { children: ReactNode }) {
       }));
     })();
   }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const dark = snapshot.theme === "Dark" || (snapshot.theme === "System" && media.matches);
+      root.dataset.theme = dark ? "dark" : "light";
+    };
+    applyTheme();
+    media.addEventListener("change", applyTheme);
+    return () => media.removeEventListener("change", applyTheme);
+  }, [snapshot.theme]);
 
   const value: ImproismContextValue = {
     ...snapshot,
@@ -248,7 +289,13 @@ export function ImproismProvider({ children }: { children: ReactNode }) {
       }
     },
     setTheme(theme) {
+      const previous = getSnapshot().theme;
       updateState((current) => ({ ...current, theme }));
+      if (isSupabaseConfigured()) {
+        void createClient().from("profiles").update({ theme }).then(({ error }) => {
+          if (error) updateState((current) => ({ ...current, theme: previous }));
+        });
+      }
     },
     async setTimezone(timezone) {
       const previous = getSnapshot().timezone;
@@ -267,10 +314,34 @@ export function ImproismProvider({ children }: { children: ReactNode }) {
       }
     },
     toggleNotification(key) {
+      const previous = getSnapshot().notifications[key];
       updateState((current) => ({
         ...current,
         notifications: { ...current.notifications, [key]: !current.notifications[key] },
       }));
+      if (isSupabaseConfigured()) {
+        const column = {
+          daily: "notification_daily",
+          journeys: "notification_journeys",
+          reflections: "notification_reflections",
+        }[key];
+        void createClient().from("profiles").update({ [column]: !previous }).then(({ error }) => {
+          if (error) updateState((current) => ({
+            ...current,
+            notifications: { ...current.notifications, [key]: previous },
+          }));
+        });
+      }
+    },
+    async setPersonalizationEnabled(enabled) {
+      const previous = getSnapshot().personalizationEnabled;
+      updateState((current) => ({ ...current, personalizationEnabled: enabled }));
+      if (!isSupabaseConfigured()) return;
+      const { error } = await createClient().from("profiles").update({ personalization_enabled: enabled });
+      if (error) {
+        updateState((current) => ({ ...current, personalizationEnabled: previous }));
+        throw error;
+      }
     },
   };
 
